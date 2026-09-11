@@ -1,0 +1,2296 @@
+﻿#define NOMINMAX
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00
+#endif
+#include <windows.h>
+#include <windowsx.h>
+#include <commctrl.h>
+#include <d3d11.h>
+#include <d3dcompiler.h>
+#include <dxgi.h>
+#include <dxgi1_2.h>
+#include <shellapi.h>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <limits>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include "resource.h"
+
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
+#pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(linker,"\"/manifestdependency:type='win32' \
+name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
+namespace {
+
+constexpr wchar_t kWindowClass[] = L"D3D11RaymarchAppWindow";
+constexpr wchar_t kWindowTitle[] = L"vsbm for Windows";
+constexpr int kDefaultWindowWidth = 1280;
+constexpr int kDefaultWindowHeight = 900;
+constexpr int kRenderReferenceSize = 1024;
+constexpr float kPi = 3.14159265358979323846f;
+
+constexpr UINT_PTR IDM_KERNEL = 0x1F00;
+constexpr UINT_PTR IDM_HIDE_TO_TASKBAR = 0x1F01;
+constexpr UINT_PTR IDM_HIDE_WHILE_WORKING = 0x1F02;
+constexpr UINT_PTR IDM_HELP = 0x1F03;
+
+constexpr UINT_PTR IDM_TRAY_SHOW = 0x2F00;
+constexpr UINT_PTR IDM_TRAY_EXIT = 0x2F01;
+constexpr UINT WMAPP_TRAYICON = WM_APP + 1;
+constexpr wchar_t kKernelWindowClass[] = L"D3D11RaymarchKernelWindow";
+constexpr int IDC_KERNEL_EDIT = 2001;
+constexpr int IDC_KERNEL_APPLY = 2002;
+constexpr int IDC_KERNEL_CANCEL = 2003;
+
+constexpr char kVertexShader[] = R"HLSL(
+struct VSOutput {
+    float4 position : SV_Position;
+    float3 dir      : TEXCOORD0;
+    float3 localdir : TEXCOORD1;
+};
+
+cbuffer Camera : register(b0)
+{
+    float3 right;
+    float  _pad0;
+    float3 forward;
+    float  _pad1;
+    float3 up;
+    float  _pad2;
+    float3 origin;
+    float  x;
+    float  y;
+    float  len;
+    float  _pad3;
+};
+
+VSOutput main(uint vertexId : SV_VertexID)
+{
+    // One oversized triangle covers the entire viewport. This removes the
+    // vertex-buffer/input-layout path entirely while preserving the exact
+    // [-1,1] screen coordinates used by the WebGL version.
+    float2 p;
+    if (vertexId == 0)      p = float2(-1.0, -1.0);
+    else if (vertexId == 1) p = float2(-1.0,  3.0);
+    else                    p = float2( 3.0, -1.0);
+
+    VSOutput output;
+    output.position = float4(p, 0.0, 1.0);
+    output.dir = forward + right * p.x * x + up * p.y * y;
+    output.localdir = float3(p.x * x, p.y * y, -1.0);
+    return output;
+}
+)HLSL";
+
+constexpr char kPixelShaderPrefix[] = R"HLSL(
+#define PI 3.14159265358979324
+#define M_L 0.3819660113
+#define M_R 0.6180339887
+#define MAXR 8
+#define SOLVER 8
+
+struct PSInput {
+    float4 position : SV_Position;
+    float3 dir      : TEXCOORD0;
+    float3 localdir : TEXCOORD1;
+};
+
+cbuffer Camera : register(b0)
+{
+    float3 right;
+    float  _pad0;
+    float3 forward;
+    float  _pad1;
+    float3 up;
+    float  _pad2;
+    float3 origin;
+    float  x;
+    float  y;
+    float  len;
+    float  _pad3;
+};
+
+)HLSL";
+
+constexpr char kPixelShaderSuffix[] = R"HLSL(
+
+float4 main(PSInput input) : SV_Target
+{
+    float3 color = float3(0.0, 0.0, 0.0);
+    int hit = 0;
+    float r3 = 0.0;
+
+    const float stepSize = 0.002;
+    float v1 = kernal(origin + input.dir * (stepSize * len));
+    float v2 = kernal(origin);
+
+    for (int k = 2; k < 1002; ++k) {
+        float3 ver = origin + input.dir * (stepSize * len * (float)k);
+        float v = kernal(ver);
+
+        if (v > 0.0 && v1 < 0.0) {
+            float r1 = stepSize * len * (float)(k - 1);
+            float r2 = stepSize * len * (float)k;
+            float m1 = kernal(origin + input.dir * r1);
+            float m2 = kernal(origin + input.dir * r2);
+
+            for (int l = 0; l < SOLVER; ++l) {
+                r3 = r1 * 0.5 + r2 * 0.5;
+                float m3 = kernal(origin + input.dir * r3);
+                if (m3 > 0.0) {
+                    r2 = r3;
+                    m2 = m3;
+                } else {
+                    r1 = r3;
+                    m1 = m3;
+                }
+            }
+
+            if (r3 < 2.0 * len) {
+                hit = 1;
+                break;
+            }
+        }
+
+        if (v < v1 && v1 > v2 && v1 < 0.0 && (v1 * 2.0 > v || v1 * 2.0 > v2)) {
+            float r1 = stepSize * len * (float)(k - 2);
+            float r2 = stepSize * len * ((float)(k - 2) + 2.0 * M_L);
+            float r3Local = stepSize * len * ((float)(k - 2) + 2.0 * M_R);
+            float r4 = stepSize * len * (float)k;
+            float m2 = kernal(origin + input.dir * r2);
+            float m3 = kernal(origin + input.dir * r3Local);
+
+            for (int l = 0; l < MAXR; ++l) {
+                if (m2 > m3) {
+                    r4 = r3Local;
+                    r3Local = r2;
+                    r2 = r4 * M_L + r1 * M_R;
+                    m3 = m2;
+                    m2 = kernal(origin + input.dir * r2);
+                } else {
+                    r1 = r2;
+                    r2 = r3Local;
+                    r3Local = r4 * M_R + r1 * M_L;
+                    m2 = m3;
+                    m3 = kernal(origin + input.dir * r3Local);
+                }
+            }
+
+            if (m2 > 0.0) {
+                r1 = stepSize * len * (float)(k - 2);
+                float rr2 = r2;
+                float rr3 = rr2;
+                float m1 = kernal(origin + input.dir * r1);
+                float mm2 = kernal(origin + input.dir * rr2);
+
+                for (int l = 0; l < SOLVER; ++l) {
+                    rr3 = r1 * 0.5 + rr2 * 0.5;
+                    float mm3 = kernal(origin + input.dir * rr3);
+                    if (mm3 > 0.0) {
+                        rr2 = rr3;
+                        mm2 = mm3;
+                    } else {
+                        r1 = rr3;
+                        m1 = mm3;
+                    }
+                }
+
+                if (rr3 < 2.0 * len && rr3 > stepSize * len) {
+                    r3 = rr3;
+                    hit = 1;
+                    break;
+                }
+            } else if (m3 > 0.0) {
+                r1 = stepSize * len * (float)(k - 2);
+                float rr2 = r3Local;
+                float rr3 = rr2;
+                float m1 = kernal(origin + input.dir * r1);
+                float mm2 = kernal(origin + input.dir * rr2);
+
+                for (int l = 0; l < SOLVER; ++l) {
+                    rr3 = r1 * 0.5 + rr2 * 0.5;
+                    float mm3 = kernal(origin + input.dir * rr3);
+                    if (mm3 > 0.0) {
+                        rr2 = rr3;
+                        mm2 = mm3;
+                    } else {
+                        r1 = rr3;
+                        m1 = mm3;
+                    }
+                }
+
+                if (rr3 < 2.0 * len && rr3 > stepSize * len) {
+                    r3 = rr3;
+                    hit = 1;
+                    break;
+                }
+            }
+        }
+
+        v2 = v1;
+        v1 = v;
+    }
+
+    if (hit == 1) {
+        float3 ver = origin + input.dir * r3;
+        float radiusSquared = dot(ver, ver);
+
+        float3 n;
+        const float normalOffset = 0.00025;
+        n.x = kernal(ver - right * (r3 * normalOffset)) - kernal(ver + right * (r3 * normalOffset));
+        n.y = kernal(ver - up * (r3 * normalOffset)) - kernal(ver + up * (r3 * normalOffset));
+        n.z = kernal(ver + forward * (r3 * normalOffset)) - kernal(ver - forward * (r3 * normalOffset));
+        float nLengthSquared = dot(n, n);
+        n *= 1.0 / sqrt(nLengthSquared);
+
+        float3 viewLocal = input.localdir;
+        viewLocal *= 1.0 / sqrt(dot(viewLocal, viewLocal));
+
+        float3 refl = n * (-2.0 * dot(viewLocal, n)) + viewLocal;
+        float lighting = refl.x * 0.276 + refl.y * 0.920 + refl.z * 0.276;
+        float normalLighting = n.x * 0.276 + n.y * 0.920 + n.z * 0.276;
+        lighting = max(0.0, lighting);
+        lighting = lighting * lighting * lighting * lighting;
+        lighting = lighting * 0.45 + normalLighting * 0.25 + 0.3;
+
+        n.x = sin(radiusSquared * 10.0) * 0.5 + 0.5;
+        n.y = sin(radiusSquared * 10.0 + 2.05) * 0.5 + 0.5;
+        n.z = sin(radiusSquared * 10.0 - 2.05) * 0.5 + 0.5;
+        color = n * lighting;
+    }
+
+    return float4(color, 1.0);
+}
+)HLSL";
+
+struct alignas(16) CameraConstants {
+    float right[3];
+    float pad0;
+    float forward[3];
+    float pad1;
+    float up[3];
+    float pad2;
+    float origin[3];
+    float x;
+    float y;
+    float len;
+    float pad3;
+};
+
+static_assert(sizeof(CameraConstants) == 80, "CameraConstants must be 80 bytes for D3D11 constant-buffer packing");
+
+struct TouchPoint {
+    bool active = false;
+    DWORD id = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+HWND g_hwnd = nullptr;
+HWND g_kernelDialog = nullptr;
+HWND g_kernelDialogEdit = nullptr;
+HWND g_kernelDialogApply = nullptr;
+HWND g_kernelDialogCancel = nullptr;
+
+HICON g_hIcon = nullptr;
+HICON g_hIconSmall = nullptr;
+HFONT g_kernelDialogFont = nullptr;
+
+NOTIFYICONDATAW g_trayIcon{};
+bool g_trayIconAdded = false;
+
+bool g_paused = false;
+bool g_pauseStateBeforeHideToTaskbar = false;
+bool g_hiddenToTaskbar = false;
+bool g_hiddenWhileWorking = false;
+LONG_PTR g_exStyleBeforeHideWhileWorking = 0;
+BYTE g_alpha = 255;
+
+UINT g_taskbarCreatedMessage = 0;
+
+ID3D11Device* g_device = nullptr;
+ID3D11DeviceContext* g_context = nullptr;
+IDXGISwapChain* g_swapChain = nullptr;
+ID3D11RenderTargetView* g_renderTarget = nullptr;
+ID3D11VertexShader* g_vertexShader = nullptr;
+ID3D11PixelShader* g_pixelShader = nullptr;
+ID3D11Buffer* g_cameraBuffer = nullptr;
+ID3D11RasterizerState* g_rasterizerState = nullptr;
+
+UINT g_renderWidth = kRenderReferenceSize;
+UINT g_renderHeight = kRenderReferenceSize;
+
+float g_len = 1.6f;
+float g_ang1 = 2.8f;
+float g_ang2 = 0.4f;
+float g_cenx = 0.0f;
+float g_ceny = 0.0f;
+float g_cenz = 0.0f;
+
+bool g_leftDown = false;
+bool g_rightDown = false;
+bool g_mouseMoved = false;
+int g_mouseX = 0;
+int g_mouseY = 0;
+
+TouchPoint g_touches[2];
+
+// FPS is measured from successfully returned Present calls, so it reflects
+// the actual frame rate of the rendered/presented application rather than
+// merely the WM_TIMER frequency. The title is updated periodically, FurMark-style.
+LARGE_INTEGER g_fpsFrequency{};
+LARGE_INTEGER g_fpsSampleStart{};
+uint64_t g_fpsFrameCount = 0;
+double g_fps = 0.0;
+
+std::string g_kernel;
+
+std::wstring GetExecutableDirectory();
+
+std::wstring GetIniPath()
+{
+    return GetExecutableDirectory() + L"\\vsbm-windows.ini";
+}
+
+bool ReadIniInt(const wchar_t* section, const wchar_t* key, int& value)
+{
+    wchar_t buffer[64]{};
+    const std::wstring ini = GetIniPath();
+    if (!GetPrivateProfileStringW(section, key, L"", buffer, static_cast<DWORD>(std::size(buffer)), ini.c_str())) {
+        return false;
+    }
+
+    wchar_t* end = nullptr;
+    const long parsed = wcstol(buffer, &end, 10);
+    if (end == buffer || *end != L'\0' ||
+        parsed < static_cast<long>(std::numeric_limits<int>::min()) ||
+        parsed > static_cast<long>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+
+    value = static_cast<int>(parsed);
+    return true;
+}
+
+void WriteIniInt(const wchar_t* section, const wchar_t* key, int value)
+{
+    wchar_t buffer[64]{};
+    swprintf_s(buffer, L"%d", value);
+    WritePrivateProfileStringW(section, key, buffer, GetIniPath().c_str());
+}
+
+struct WindowSettings {
+    bool hasPositionAndSize = false;
+    int left = CW_USEDEFAULT;
+    int top = CW_USEDEFAULT;
+    int width = kDefaultWindowWidth;
+    int height = kDefaultWindowHeight;
+    BYTE alpha = 255;
+};
+
+WindowSettings g_windowSettings{};
+
+void LoadWindowSettings()
+{
+    int left = 0, top = 0, width = 0, height = 0, opacity = 255;
+    const bool haveLeft = ReadIniInt(L"Window", L"Left", left);
+    const bool haveTop = ReadIniInt(L"Window", L"Top", top);
+    const bool haveWidth = ReadIniInt(L"Window", L"Width", width);
+    const bool haveHeight = ReadIniInt(L"Window", L"Height", height);
+
+    if (haveLeft && haveTop && haveWidth && haveHeight &&
+        width >= 256 && height >= 256 && width <= 16384 && height <= 16384) {
+        g_windowSettings.hasPositionAndSize = true;
+        g_windowSettings.left = left;
+        g_windowSettings.top = top;
+        g_windowSettings.width = width;
+        g_windowSettings.height = height;
+    }
+
+    if (ReadIniInt(L"Window", L"Opacity", opacity)) {
+        opacity = std::max(0, std::min(255, opacity));
+        g_windowSettings.alpha = static_cast<BYTE>(opacity);
+    }
+
+    g_alpha = g_windowSettings.alpha;
+}
+
+bool GetNormalWindowRect(HWND hwnd, RECT& rect)
+{
+    WINDOWPLACEMENT placement{};
+    placement.length = sizeof(placement);
+    if (!GetWindowPlacement(hwnd, &placement)) {
+        return false;
+    }
+
+    rect = placement.rcNormalPosition;
+    return rect.right > rect.left && rect.bottom > rect.top;
+}
+
+void SaveWindowSettings()
+{
+    if (!g_hwnd) {
+        return;
+    }
+
+    RECT rect{};
+    if (GetNormalWindowRect(g_hwnd, rect)) {
+        WriteIniInt(L"Window", L"Left", rect.left);
+        WriteIniInt(L"Window", L"Top", rect.top);
+        WriteIniInt(L"Window", L"Width", rect.right - rect.left);
+        WriteIniInt(L"Window", L"Height", rect.bottom - rect.top);
+    }
+
+    WriteIniInt(L"Window", L"Opacity", static_cast<int>(g_alpha));
+}
+
+void ClampSavedWindowRectToMonitor(RECT& rect)
+{
+    HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    if (!monitor || !GetMonitorInfoW(monitor, &mi)) {
+        return;
+    }
+
+    const int width = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    const RECT work = mi.rcWork;
+
+    if (rect.right <= work.left + 40 || rect.left >= work.right - 40) {
+        rect.left = work.left + (work.right - work.left - width) / 2;
+    }
+    if (rect.bottom <= work.top + 40 || rect.top >= work.bottom - 40) {
+        rect.top = work.top + (work.bottom - work.top - height) / 2;
+    }
+}
+
+void UpdateWindowTitle()
+{
+    if (!g_hwnd) {
+        return;
+    }
+
+    wchar_t title[128]{};
+    const unsigned displayedFps = g_fps > 0.0
+        ? static_cast<unsigned>(std::lround(g_fps))
+        : 0u;
+
+    if (g_paused) {
+        swprintf_s(title, L"%s - Paused - %u FPS", kWindowTitle, displayedFps);
+    } else {
+        swprintf_s(title, L"%s - %u FPS", kWindowTitle, displayedFps);
+    }
+
+    SetWindowTextW(g_hwnd, title);
+}
+
+void ApplyPausedTitle()
+{
+    UpdateWindowTitle();
+}
+
+void InitializeFpsCounter()
+{
+    QueryPerformanceFrequency(&g_fpsFrequency);
+    QueryPerformanceCounter(&g_fpsSampleStart);
+    g_fpsFrameCount = 0;
+    g_fps = 0.0;
+}
+
+void RecordPresentedFrame()
+{
+    if (g_fpsFrequency.QuadPart <= 0) {
+        return;
+    }
+
+    ++g_fpsFrameCount;
+
+    LARGE_INTEGER now{};
+    QueryPerformanceCounter(&now);
+    const double elapsed = static_cast<double>(now.QuadPart - g_fpsSampleStart.QuadPart) /
+        static_cast<double>(g_fpsFrequency.QuadPart);
+
+    // Update the title twice per second. This avoids changing the caption on
+    // every frame while still making the displayed FPS responsive.
+    if (elapsed >= 0.5) {
+        g_fps = static_cast<double>(g_fpsFrameCount) / elapsed;
+        g_fpsFrameCount = 0;
+        g_fpsSampleStart = now;
+        UpdateWindowTitle();
+    }
+}
+
+void SetPaused(bool paused)
+{
+    if (g_paused == paused) {
+        ApplyPausedTitle();
+        return;
+    }
+
+    g_paused = paused;
+    ApplyPausedTitle();
+}
+
+void SetMainWindowAlpha(BYTE alpha)
+{
+    g_alpha = alpha;
+    if (g_hwnd) {
+        SetLayeredWindowAttributes(g_hwnd, 0, g_alpha, LWA_ALPHA);
+    }
+}
+
+bool SaveKernelSourceToDisk(const std::string& source, std::wstring* errorText = nullptr)
+{
+    const std::wstring path = GetExecutableDirectory() + L"\\kernel.glsl";
+    const std::wstring temporaryPath = path + L".tmp";
+
+    HANDLE file = CreateFileW(
+        temporaryPath.c_str(),
+        GENERIC_WRITE,
+        0,
+        nullptr,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+
+    if (file == INVALID_HANDLE_VALUE) {
+        if (errorText) {
+            *errorText = L"Cannot create temporary kernel file. Win32 error " +
+                std::to_wstring(GetLastError()) + L".";
+        }
+        return false;
+    }
+
+    bool ok = true;
+    const char* data = source.data();
+    size_t remaining = source.size();
+
+    while (remaining > 0) {
+        const DWORD chunk = static_cast<DWORD>(std::min<size_t>(remaining, 1024 * 1024));
+        DWORD written = 0;
+        if (!WriteFile(file, data, chunk, &written, nullptr) || written != chunk) {
+            ok = false;
+            break;
+        }
+        data += written;
+        remaining -= written;
+    }
+
+    if (ok && !FlushFileBuffers(file)) {
+        ok = false;
+    }
+
+    DWORD writeError = ERROR_SUCCESS;
+    if (!ok) {
+        writeError = GetLastError();
+        if (writeError == ERROR_SUCCESS) {
+            writeError = ERROR_WRITE_FAULT;
+        }
+    }
+    CloseHandle(file);
+
+    if (!ok) {
+        DeleteFileW(temporaryPath.c_str());
+        if (errorText) {
+            *errorText = L"Cannot write kernel.glsl. Win32 error " +
+                std::to_wstring(writeError) + L".";
+        }
+        return false;
+    }
+
+    if (!MoveFileExW(
+            temporaryPath.c_str(),
+            path.c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        const DWORD moveError = GetLastError();
+        DeleteFileW(temporaryPath.c_str());
+        if (errorText) {
+            *errorText = L"Cannot replace kernel.glsl. Win32 error " +
+                std::to_wstring(moveError) + L".";
+        }
+        return false;
+    }
+
+    return true;
+}
+
+void SafeRelease(IUnknown*& object)
+{
+    if (object) {
+        object->Release();
+        object = nullptr;
+    }
+}
+
+template <typename T>
+void SafeReleaseT(T*& object)
+{
+    if (object) {
+        object->Release();
+        object = nullptr;
+    }
+}
+
+std::wstring Utf8ToWide(const std::string& input)
+{
+    if (input.empty()) {
+        return {};
+    }
+    const int count = MultiByteToWideChar(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), nullptr, 0);
+    if (count <= 0) {
+        return {};
+    }
+    std::wstring output(static_cast<size_t>(count), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), &output[0], count);
+    return output;
+}
+
+std::string WideToUtf8(const std::wstring& input)
+{
+    if (input.empty()) {
+        return {};
+    }
+    const int count = WideCharToMultiByte(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), nullptr, 0, nullptr, nullptr);
+    if (count <= 0) {
+        return {};
+    }
+    std::string output(static_cast<size_t>(count), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), &output[0], count, nullptr, nullptr);
+    return output;
+}
+
+std::wstring NormalizeNewlinesToLF(const std::wstring& input)
+{
+    std::wstring output;
+    output.reserve(input.size());
+    for (size_t i = 0; i < input.size(); ++i) {
+        const wchar_t ch = input[i];
+        if (ch == L'\r') {
+            output.push_back(L'\n');
+            if (i + 1 < input.size() && input[i + 1] == L'\n') {
+                ++i;
+            }
+        } else {
+            output.push_back(ch);
+        }
+    }
+    return output;
+}
+
+std::wstring NormalizeNewlinesToCRLF(const std::wstring& input)
+{
+    std::wstring output;
+    output.reserve(input.size() + input.size() / 16 + 2);
+    for (size_t i = 0; i < input.size(); ++i) {
+        const wchar_t ch = input[i];
+        if (ch == L'\r') {
+            output.push_back(L'\r');
+            if (i + 1 < input.size() && input[i + 1] == L'\n') {
+                output.push_back(L'\n');
+                ++i;
+            } else {
+                output.push_back(L'\n');
+            }
+        } else if (ch == L'\n') {
+            output.push_back(L'\r');
+            output.push_back(L'\n');
+        } else {
+            output.push_back(ch);
+        }
+    }
+    return output;
+}
+
+UINT GetWindowDpiSafe(HWND hwnd)
+{
+    const UINT dpi = GetDpiForWindow(hwnd);
+    return dpi ? dpi : 96u;
+}
+
+int ScaleForDpi(int value, UINT dpi)
+{
+    return MulDiv(value, static_cast<int>(dpi), 96);
+}
+
+void centerWindow(HWND hwnd, HWND parent) {
+    RECT rcParent{};
+    if (parent) GetWindowRect(parent, &rcParent);
+
+    RECT rect;
+    GetWindowRect(hwnd, &rect);
+    auto w = rect.right - rect.left, h = rect.bottom - rect.top;
+    if (parent) {
+        auto w2 = rcParent.right - rcParent.left, h2 = rcParent.bottom - rcParent.top;
+        rect.left = rcParent.left + w2 / 2 - w / 2;
+        rect.top = rcParent.top + h2 / 2 - h / 2;
+    }
+    else {
+        rect.left = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
+        rect.top = (GetSystemMetrics(SM_CYSCREEN) - h) / 2;
+    }
+    UINT flags = SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER;
+    flags |= (IsWindowVisible(hwnd) ? 0 : SWP_HIDEWINDOW);
+    SetWindowPos(hwnd, HWND_TOP, rect.left, rect.top, 1, 1, flags);
+}
+
+HFONT CreateKernelDialogFont(UINT dpi)
+{
+    const int height = -MulDiv(9, static_cast<int>(dpi), 72);
+    return CreateFontW(
+        height, 0, 0, 0,
+        FW_NORMAL,
+        FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        L"Consolas");
+}
+
+void ApplyKernelDialogFont(HWND hwnd)
+{
+    if (!hwnd) {
+        return;
+    }
+
+    const HFONT newFont = CreateKernelDialogFont(GetWindowDpiSafe(hwnd));
+    if (!newFont) {
+        return;
+    }
+
+    if (g_kernelDialogEdit) {
+        SendMessageW(g_kernelDialogEdit, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
+    }
+    if (g_kernelDialogApply) {
+        SendMessageW(g_kernelDialogApply, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
+    }
+    if (g_kernelDialogCancel) {
+        SendMessageW(g_kernelDialogCancel, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
+    }
+
+    if (g_kernelDialogFont) {
+        DeleteObject(g_kernelDialogFont);
+    }
+    g_kernelDialogFont = newFont;
+}
+
+void LayoutKernelDialog(HWND hwnd)
+{
+    RECT client{};
+    GetClientRect(hwnd, &client);
+
+    const UINT dpi = GetWindowDpiSafe(hwnd);
+    const int margin = ScaleForDpi(8, dpi);
+    const int gap = ScaleForDpi(8, dpi);
+    const int buttonWidth = ScaleForDpi(86, dpi);
+    const int buttonHeight = ScaleForDpi(28, dpi);
+
+    const int width = client.right - client.left;
+    const int height = client.bottom - client.top;
+    const int editHeight = std::max(1, height - margin * 3 - buttonHeight);
+
+    if (g_kernelDialogEdit) {
+        SetWindowPos(g_kernelDialogEdit, nullptr,
+            margin, margin,
+            std::max(1, width - margin * 2), editHeight,
+            SWP_NOZORDER);
+    }
+
+    if (g_kernelDialogApply) {
+        SetWindowPos(g_kernelDialogApply, nullptr,
+            std::max(margin, width - margin - buttonWidth * 2 - gap),
+            std::max(margin, height - margin - buttonHeight),
+            buttonWidth, buttonHeight,
+            SWP_NOZORDER);
+    }
+
+    if (g_kernelDialogCancel) {
+        SetWindowPos(g_kernelDialogCancel, nullptr,
+            std::max(margin, width - margin - buttonWidth),
+            std::max(margin, height - margin - buttonHeight),
+            buttonWidth, buttonHeight,
+            SWP_NOZORDER);
+    }
+}
+
+std::string LoadTextFile(const std::wstring& path)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        return {};
+    }
+    std::ostringstream stream;
+    stream << file.rdbuf();
+    return stream.str();
+}
+
+bool ReplaceAll(std::string& value, const std::string& from, const std::string& to)
+{
+    if (from.empty()) {
+        return false;
+    }
+    bool changed = false;
+    size_t pos = 0;
+    while ((pos = value.find(from, pos)) != std::string::npos) {
+        value.replace(pos, from.size(), to);
+        pos += to.size();
+        changed = true;
+    }
+    return changed;
+}
+
+std::string TranslateKernelGLSLToHLSL(std::string source)
+{
+    // Strip a few GLSL declarations that have no HLSL equivalent/meaning here.
+    ReplaceAll(source, "#version 100", "");
+    ReplaceAll(source, "precision highp float;", "");
+    ReplaceAll(source, "precision mediump float;", "");
+    ReplaceAll(source, "precision lowp float;", "");
+
+    ReplaceAll(source, "vec2", "float2");
+    ReplaceAll(source, "vec3", "float3");
+    ReplaceAll(source, "vec4", "float4");
+    ReplaceAll(source, "mat2", "float2x2");
+    ReplaceAll(source, "mat3", "float3x3");
+    ReplaceAll(source, "mat4", "float4x4");
+
+    ReplaceAll(source, "atan(", "atan2(");
+    ReplaceAll(source, "mix(", "lerp(");
+    ReplaceAll(source, "fract(", "frac(");
+    ReplaceAll(source, "discard;", "discard;");
+
+    return source;
+}
+
+std::wstring GetExecutableDirectory()
+{
+    wchar_t buffer[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) {
+        return L".";
+    }
+    std::wstring path(buffer, length);
+    const size_t slash = path.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) {
+        return L".";
+    }
+    return path.substr(0, slash);
+}
+
+
+std::string NormalizeNewlinesToLF(const std::string& input)
+{
+    std::string output;
+    output.reserve(input.size());
+
+    for (size_t i = 0; i < input.size(); ++i) {
+        const char ch = input[i];
+        if (ch == '\r') {
+            output.push_back('\n');
+            if (i + 1 < input.size() && input[i + 1] == '\n') {
+                ++i;
+            }
+        } else {
+            output.push_back(ch);
+        }
+    }
+
+    return output;
+}
+
+std::string GetKernelSource()
+{
+    const std::wstring path = GetExecutableDirectory() + L"\\kernel.glsl";
+    std::string loaded = LoadTextFile(path);
+    if (!loaded.empty()) {
+        return NormalizeNewlinesToLF(loaded);
+    }
+
+    return R"GLSL(float kernal(vec3 ver){
+   vec3 a;
+   float b,c,d,e;
+   a=ver;
+   for(int i=0;i<5;i++){
+       b=length(a);
+       c=atan(a.y,a.x)*8.0;
+       e=1.0/b;
+       d=acos(a.z/b)*8.0;
+       b=pow(b,8.0);
+       a=vec3(b*sin(d)*cos(c),b*sin(d)*sin(c),b*cos(d))+ver;
+       if(b>6.0){
+           break;
+       }
+   }
+   return 4.0-a.x*a.x-a.y*a.y-a.z*a.z;
+})GLSL";
+}
+
+std::string BuildPixelShaderSource(const std::string& kernelSource)
+{
+    std::string result = kPixelShaderPrefix;
+    result += TranslateKernelGLSLToHLSL(kernelSource);
+    result += "\n";
+    result += kPixelShaderSuffix;
+    return result;
+}
+
+void ShowCompileError(const wchar_t* title, ID3DBlob* errors)
+{
+    std::string text;
+    if (errors && errors->GetBufferPointer() && errors->GetBufferSize()) {
+        text.assign(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize());
+    } else {
+        text = "Unknown shader compilation error.";
+    }
+    const std::wstring wide = Utf8ToWide(text);
+    MessageBoxW(g_hwnd, wide.c_str(), title, MB_OK | MB_ICONERROR);
+}
+
+bool CompileVertexShader()
+{
+    ID3DBlob* shader = nullptr;
+    ID3DBlob* errors = nullptr;
+    const HRESULT hr = D3DCompile(
+        kVertexShader,
+        sizeof(kVertexShader) - 1,
+        "vertex.hlsl",
+        nullptr,
+        D3D_COMPILE_STANDARD_FILE_INCLUDE,
+        "main",
+        "vs_5_0",
+        D3DCOMPILE_ENABLE_STRICTNESS,
+        0,
+        &shader,
+        &errors);
+
+    if (FAILED(hr)) {
+        ShowCompileError(L"Vertex Shader Compilation Failed", errors);
+        SafeReleaseT(errors);
+        SafeReleaseT(shader);
+        return false;
+    }
+
+    HRESULT createHr = g_device->CreateVertexShader(
+        shader->GetBufferPointer(), shader->GetBufferSize(), nullptr, &g_vertexShader);
+    if (FAILED(createHr)) {
+        SafeReleaseT(errors);
+        SafeReleaseT(shader);
+        return false;
+    }
+
+    SafeReleaseT(errors);
+    SafeReleaseT(shader);
+
+    return true;
+}
+
+bool CompileKernelShader(const std::string& kernelSource, bool showError)
+{
+    const std::string pixelSource = BuildPixelShaderSource(kernelSource);
+    ID3DBlob* shader = nullptr;
+    ID3DBlob* errors = nullptr;
+
+    const HRESULT hr = D3DCompile(
+        pixelSource.data(),
+        pixelSource.size(),
+        "kernel.hlsl",
+        nullptr,
+        D3D_COMPILE_STANDARD_FILE_INCLUDE,
+        "main",
+        "ps_5_0",
+        D3DCOMPILE_ENABLE_STRICTNESS,
+        0,
+        &shader,
+        &errors);
+
+    if (FAILED(hr)) {
+        if (showError) {
+            ShowCompileError(L"Pixel Shader Compilation Failed", errors);
+        }
+        SafeReleaseT(errors);
+        SafeReleaseT(shader);
+        return false;
+    }
+
+    ID3D11PixelShader* newShader = nullptr;
+    const HRESULT createHr = g_device->CreatePixelShader(
+        shader->GetBufferPointer(), shader->GetBufferSize(), nullptr, &newShader);
+
+    if (FAILED(createHr)) {
+        if (showError) {
+            MessageBoxW(g_hwnd, L"D3D11 could not create the compiled Pixel Shader.", L"Pixel Shader Error", MB_OK | MB_ICONERROR);
+        }
+        SafeReleaseT(errors);
+        SafeReleaseT(shader);
+        return false;
+    }
+
+    SafeReleaseT(errors);
+    SafeReleaseT(shader);
+
+    SafeReleaseT(g_pixelShader);
+    g_pixelShader = newShader;
+    g_kernel = kernelSource;
+    return true;
+}
+
+void ReleaseRenderTarget()
+{
+    SafeReleaseT(g_renderTarget);
+}
+
+bool CreateRenderTarget()
+{
+    ID3D11Texture2D* backBuffer = nullptr;
+    const HRESULT hr = g_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+    if (FAILED(hr)) {
+        return false;
+    }
+    const HRESULT createHr = g_device->CreateRenderTargetView(backBuffer, nullptr, &g_renderTarget);
+    SafeReleaseT(backBuffer);
+    return SUCCEEDED(createHr);
+}
+
+void UpdateRenderViewport()
+{
+    RECT client{};
+    GetClientRect(g_hwnd, &client);
+
+    const UINT width = static_cast<UINT>(std::max<LONG>(1, client.right - client.left));
+    const UINT height = static_cast<UINT>(std::max<LONG>(1, client.bottom - client.top));
+    const UINT side = std::max<UINT>(1, std::min(width, height));
+
+    g_renderWidth = side;
+    g_renderHeight = side;
+
+    D3D11_VIEWPORT viewport{};
+    viewport.TopLeftX = 0.5f * static_cast<float>(width - side);
+    viewport.TopLeftY = 0.5f * static_cast<float>(height - side);
+    viewport.Width = static_cast<float>(side);
+    viewport.Height = static_cast<float>(side);
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+    g_context->RSSetViewports(1, &viewport);
+}
+
+bool ResizeSwapChain(UINT width, UINT height)
+{
+    if (!g_swapChain || !g_context) {
+        return false;
+    }
+
+    ReleaseRenderTarget();
+    g_context->OMSetRenderTargets(0, nullptr, nullptr);
+
+    const HRESULT hr = g_swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+    if (FAILED(hr)) {
+        return false;
+    }
+
+    if (!CreateRenderTarget()) {
+        return false;
+    }
+
+    UpdateRenderViewport();
+    return true;
+}
+
+bool InitD3D()
+{
+    RECT rect{};
+    GetClientRect(g_hwnd, &rect);
+    const UINT width = static_cast<UINT>(std::max<LONG>(1, rect.right - rect.left));
+    const UINT height = static_cast<UINT>(std::max<LONG>(1, rect.bottom - rect.top));
+
+    const D3D_FEATURE_LEVEL requestedLevels[] = {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0,
+    };
+    D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
+
+    UINT flags = 0;
+#if defined(_DEBUG)
+    flags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+
+    DXGI_SWAP_CHAIN_DESC swapDesc{};
+    swapDesc.BufferDesc.Width = width;
+    swapDesc.BufferDesc.Height = height;
+    swapDesc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    swapDesc.BufferDesc.RefreshRate.Numerator = 60;
+    swapDesc.BufferDesc.RefreshRate.Denominator = 1;
+    swapDesc.SampleDesc.Count = 1;
+    swapDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    swapDesc.BufferCount = 1;
+    swapDesc.OutputWindow = g_hwnd;
+    swapDesc.Windowed = TRUE;
+    swapDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+
+    HRESULT hr = D3D11CreateDeviceAndSwapChain(
+        nullptr,
+        D3D_DRIVER_TYPE_HARDWARE,
+        nullptr,
+        flags,
+        requestedLevels,
+        static_cast<UINT>(std::size(requestedLevels)),
+        D3D11_SDK_VERSION,
+        &swapDesc,
+        &g_swapChain,
+        &g_device,
+        &actualLevel,
+        &g_context);
+
+    if (hr == E_INVALIDARG) {
+        hr = D3D11CreateDeviceAndSwapChain(
+            nullptr,
+            D3D_DRIVER_TYPE_HARDWARE,
+            nullptr,
+            flags,
+            requestedLevels + 1,
+            1,
+            D3D11_SDK_VERSION,
+            &swapDesc,
+            &g_swapChain,
+            &g_device,
+            &actualLevel,
+            &g_context);
+    }
+
+    if (FAILED(hr)) {
+        wchar_t text[256];
+        swprintf_s(text, L"D3D11CreateDeviceAndSwapChain failed: 0x%08X", static_cast<unsigned>(hr));
+        MessageBoxW(g_hwnd, text, L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    if (!CreateRenderTarget()) {
+        MessageBoxW(g_hwnd, L"Failed to create the Direct3D 11 render target.", L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    D3D11_BUFFER_DESC cameraDesc{};
+    cameraDesc.ByteWidth = sizeof(CameraConstants);
+    cameraDesc.Usage = D3D11_USAGE_DYNAMIC;
+    cameraDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    cameraDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+    hr = g_device->CreateBuffer(&cameraDesc, nullptr, &g_cameraBuffer);
+    if (FAILED(hr)) {
+        MessageBoxW(g_hwnd, L"Failed to create the camera constant buffer.", L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    D3D11_RASTERIZER_DESC rasterizerDesc{};
+    rasterizerDesc.FillMode = D3D11_FILL_SOLID;
+    rasterizerDesc.CullMode = D3D11_CULL_NONE;
+    rasterizerDesc.DepthClipEnable = TRUE;
+    hr = g_device->CreateRasterizerState(&rasterizerDesc, &g_rasterizerState);
+    if (FAILED(hr)) {
+        MessageBoxW(g_hwnd, L"Failed to create the Direct3D 11 rasterizer state.", L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    if (!CompileVertexShader()) {
+        return false;
+    }
+
+    g_kernel = GetKernelSource();
+    if (!CompileKernelShader(g_kernel, true)) {
+        return false;
+    }
+
+    UpdateRenderViewport();
+    return true;
+}
+
+void ShutdownD3D()
+{
+    if (g_context) {
+        g_context->ClearState();
+        g_context->Flush();
+    }
+
+    SafeReleaseT(g_rasterizerState);
+    SafeReleaseT(g_cameraBuffer);
+    SafeReleaseT(g_pixelShader);
+    SafeReleaseT(g_vertexShader);
+    ReleaseRenderTarget();
+    SafeReleaseT(g_swapChain);
+    SafeReleaseT(g_context);
+    SafeReleaseT(g_device);
+}
+
+void UpdateCameraBuffer()
+{
+    if (!g_context || !g_cameraBuffer) {
+        return;
+    }
+
+    const float cx = static_cast<float>(g_renderWidth);
+    const float cy = static_cast<float>(g_renderHeight);
+    const float sum = std::max(1.0f, cx + cy);
+
+    CameraConstants constants{};
+    const float cos1 = std::cos(g_ang1);
+    const float sin1 = std::sin(g_ang1);
+    const float cos2 = std::cos(g_ang2);
+    const float sin2 = std::sin(g_ang2);
+
+    constants.x = cx * 2.0f / sum;
+    constants.y = cy * 2.0f / sum;
+    constants.len = g_len;
+
+    constants.origin[0] = g_len * cos1 * cos2 + g_cenx;
+    constants.origin[1] = g_len * sin2 + g_ceny;
+    constants.origin[2] = g_len * sin1 * cos2 + g_cenz;
+
+    constants.right[0] = sin1;
+    constants.right[1] = 0.0f;
+    constants.right[2] = -cos1;
+
+    constants.up[0] = -sin2 * cos1;
+    constants.up[1] = cos2;
+    constants.up[2] = -sin2 * sin1;
+
+    constants.forward[0] = -cos1 * cos2;
+    constants.forward[1] = -sin2;
+    constants.forward[2] = -sin1 * cos2;
+
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (SUCCEEDED(g_context->Map(g_cameraBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+        std::memcpy(mapped.pData, &constants, sizeof(constants));
+        g_context->Unmap(g_cameraBuffer, 0);
+    }
+}
+
+void Render()
+{
+    if (!g_context || !g_renderTarget || !g_vertexShader || !g_pixelShader || !g_swapChain) {
+        return;
+    }
+
+    UpdateRenderViewport();
+    UpdateCameraBuffer();
+
+    const float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    g_context->OMSetRenderTargets(1, &g_renderTarget, nullptr);
+    g_context->ClearRenderTargetView(g_renderTarget, clearColor);
+
+    // Fullscreen triangle generated from SV_VertexID; no VB/IA state required.
+    g_context->IASetInputLayout(nullptr);
+    g_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    g_context->RSSetState(g_rasterizerState);
+    g_context->VSSetShader(g_vertexShader, nullptr, 0);
+    g_context->PSSetShader(g_pixelShader, nullptr, 0);
+    g_context->VSSetConstantBuffers(0, 1, &g_cameraBuffer);
+    g_context->PSSetConstantBuffers(0, 1, &g_cameraBuffer);
+    g_context->Draw(3, 0);
+
+    const HRESULT presentHr = g_swapChain->Present(1, 0);
+    if (SUCCEEDED(presentHr)) {
+        RecordPresentedFrame();
+    }
+    if (FAILED(presentHr) && presentHr != DXGI_STATUS_OCCLUDED) {
+        HRESULT reason = g_device ? g_device->GetDeviceRemovedReason() : E_FAIL;
+        wchar_t text[256];
+        swprintf_s(text, L"Present failed: 0x%08X\nDevice removed reason: 0x%08X", static_cast<unsigned>(presentHr), static_cast<unsigned>(reason));
+        KillTimer(g_hwnd, 1);
+        MessageBoxW(g_hwnd, text, L"Direct3D 11 Present Error", MB_OK | MB_ICONERROR);
+    }
+}
+
+
+void RemoveTrayIcon()
+{
+    if (!g_trayIconAdded) {
+        return;
+    }
+
+    Shell_NotifyIconW(NIM_DELETE, &g_trayIcon);
+    g_trayIconAdded = false;
+    std::memset(&g_trayIcon, 0, sizeof(g_trayIcon));
+}
+
+bool AddTrayIcon()
+{
+    if (!g_hwnd || !g_hIconSmall) {
+        return false;
+    }
+
+    std::memset(&g_trayIcon, 0, sizeof(g_trayIcon));
+    g_trayIcon.cbSize = sizeof(g_trayIcon);
+    g_trayIcon.hWnd = g_hwnd;
+    g_trayIcon.uID = 1;
+    g_trayIcon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    g_trayIcon.uCallbackMessage = WMAPP_TRAYICON;
+    g_trayIcon.hIcon = g_hIconSmall;
+    wcscpy_s(g_trayIcon.szTip, L"vsbm for Windows");
+
+    if (!Shell_NotifyIconW(NIM_ADD, &g_trayIcon)) {
+        return false;
+    }
+
+    // Keep the classic callback-message semantics so lParam is the mouse
+    // message (WM_LBUTTONUP, WM_RBUTTONUP, etc.) used below.
+    g_trayIconAdded = true;
+    return true;
+}
+
+void RestoreFromHideWhileWorking()
+{
+    if (!g_hiddenWhileWorking || !g_hwnd) {
+        return;
+    }
+
+    LONG_PTR exStyle = g_exStyleBeforeHideWhileWorking;
+    exStyle &= ~(static_cast<LONG_PTR>(WS_EX_TRANSPARENT) |
+                 static_cast<LONG_PTR>(WS_EX_TOOLWINDOW));
+    exStyle |= WS_EX_APPWINDOW;
+
+    SetWindowLongPtrW(g_hwnd, GWL_EXSTYLE, exStyle);
+    SetMainWindowAlpha(g_alpha);
+
+    SetWindowPos(
+        g_hwnd, nullptr,
+        0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+        SWP_NOZORDER | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
+
+    g_hiddenWhileWorking = false;
+    ShowWindow(g_hwnd, SW_RESTORE);
+    SetForegroundWindow(g_hwnd);
+}
+
+void HideWhileWorking()
+{
+    if (!g_hwnd || g_hiddenWhileWorking) {
+        return;
+    }
+
+    if (g_hiddenToTaskbar) {
+        return;
+    }
+
+    g_exStyleBeforeHideWhileWorking = GetWindowLongPtrW(g_hwnd, GWL_EXSTYLE);
+
+    LONG_PTR exStyle = g_exStyleBeforeHideWhileWorking;
+    exStyle |= WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+    exStyle &= ~static_cast<LONG_PTR>(WS_EX_APPWINDOW);
+
+    SetWindowLongPtrW(g_hwnd, GWL_EXSTYLE, exStyle);
+    SetWindowPos(
+        g_hwnd, nullptr,
+        0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_FRAMECHANGED);
+
+    SetLayeredWindowAttributes(g_hwnd, 0, 0, LWA_ALPHA);
+    g_hiddenWhileWorking = true;
+}
+
+void RestoreFromHideToTaskbar()
+{
+    if (!g_hiddenToTaskbar || !g_hwnd) {
+        return;
+    }
+
+    // Keep it paused during the visual restore animation so no new frame is
+    // generated between the unhide/minimize/restore steps.
+    const bool savedPauseState = g_pauseStateBeforeHideToTaskbar;
+    g_paused = true;
+    ApplyPausedTitle();
+
+    // This intentionally mirrors the requested Windows animation sequence.
+    ShowWindow(g_hwnd, SW_MINIMIZE);
+    ShowWindow(g_hwnd, SW_RESTORE);
+
+    g_hiddenToTaskbar = false;
+    SetPaused(savedPauseState);
+    SetMainWindowAlpha(g_alpha);
+    SetForegroundWindow(g_hwnd);
+}
+
+void HideToTaskbar()
+{
+    if (!g_hwnd || g_hiddenToTaskbar) {
+        return;
+    }
+
+    if (g_hiddenWhileWorking) {
+        RestoreFromHideWhileWorking();
+    }
+
+    g_pauseStateBeforeHideToTaskbar = g_paused;
+    SetPaused(true);
+
+    // First minimize so Windows performs the normal taskbar animation,
+    // then hide the already-minimized window.
+    ShowWindow(g_hwnd, SW_MINIMIZE);
+    ShowWindow(g_hwnd, SW_HIDE);
+    g_hiddenToTaskbar = true;
+}
+
+void ShowTrayMenu()
+{
+    if (!g_hwnd) {
+        return;
+    }
+
+    HMENU menu = CreatePopupMenu();
+    if (!menu) {
+        return;
+    }
+
+    AppendMenuW(menu, MF_STRING, IDM_TRAY_SHOW, L"&Show");
+    AppendMenuW(menu, MF_STRING, IDM_TRAY_EXIT, L"&Exit");
+
+    POINT point{};
+    GetCursorPos(&point);
+
+    SetForegroundWindow(g_hwnd);
+    const UINT command = TrackPopupMenuEx(
+        menu,
+        TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
+        point.x,
+        point.y,
+        g_hwnd,
+        nullptr);
+
+    DestroyMenu(menu);
+    PostMessageW(g_hwnd, WM_NULL, 0, 0);
+
+    switch (command) {
+    case IDM_TRAY_SHOW:
+        if (g_hiddenWhileWorking) {
+            RestoreFromHideWhileWorking();
+        } else if (g_hiddenToTaskbar) {
+            RestoreFromHideToTaskbar();
+        } else {
+            ShowWindow(g_hwnd, SW_RESTORE);
+            SetForegroundWindow(g_hwnd);
+        }
+        break;
+
+    case IDM_TRAY_EXIT:
+        DestroyWindow(g_hwnd);
+        break;
+
+    default:
+        break;
+    }
+}
+
+LRESULT CALLBACK KernelDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    switch (message) {
+    case WM_CREATE: {
+        const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lParam);
+        const HINSTANCE instance = create ? create->hInstance : GetModuleHandleW(nullptr);
+        const UINT dpi = GetWindowDpiSafe(hwnd);
+        const int margin = ScaleForDpi(8, dpi);
+        const int buttonWidth = ScaleForDpi(86, dpi);
+        const int buttonHeight = ScaleForDpi(28, dpi);
+
+        g_kernelDialogEdit = CreateWindowExW(
+            WS_EX_CLIENTEDGE,
+            L"EDIT",
+            L"",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+                ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
+                WS_VSCROLL | WS_HSCROLL | ES_WANTRETURN | ES_NOHIDESEL,
+            margin, margin, 680, 400,
+            hwnd,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_EDIT)),
+            instance,
+            nullptr);
+
+        if (!g_kernelDialogEdit) {
+            return -1;
+        }
+
+        g_kernelDialogApply = CreateWindowExW(
+            0, L"BUTTON", L"&Apply",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            0, 0, buttonWidth, buttonHeight,
+            hwnd,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_APPLY)),
+            instance,
+            nullptr);
+
+        g_kernelDialogCancel = CreateWindowExW(
+            0, L"BUTTON", L"&Cancel",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            0, 0, buttonWidth, buttonHeight,
+            hwnd,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_CANCEL)),
+            instance,
+            nullptr);
+
+        if (!g_kernelDialogApply || !g_kernelDialogCancel) {
+            return -1;
+        }
+
+        SendMessageW(g_kernelDialogEdit, EM_SETLIMITTEXT, static_cast<WPARAM>(1024 * 1024), 0);
+
+        // Win32's multiline EDIT expects CRLF for line breaks. Keep LF as the
+        // program's canonical Kernel representation and convert only at the UI boundary.
+        const std::wstring initialText = NormalizeNewlinesToCRLF(Utf8ToWide(g_kernel));
+        SetWindowTextW(g_kernelDialogEdit, initialText.c_str());
+
+        ApplyKernelDialogFont(hwnd);
+        LayoutKernelDialog(hwnd);
+        SetFocus(g_kernelDialogEdit);
+        return 0;
+    }
+
+    case WM_SIZE:
+        LayoutKernelDialog(hwnd);
+        return 0;
+
+    case WM_DPICHANGED: {
+        const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
+        if (suggested) {
+            SetWindowPos(hwnd, nullptr,
+                suggested->left,
+                suggested->top,
+                suggested->right - suggested->left,
+                suggested->bottom - suggested->top,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        ApplyKernelDialogFont(hwnd);
+        LayoutKernelDialog(hwnd);
+        return 0;
+    }
+
+    case WM_GETMINMAXINFO: {
+        auto* minMax = reinterpret_cast<MINMAXINFO*>(lParam);
+        const UINT dpi = GetWindowDpiSafe(hwnd);
+        minMax->ptMinTrackSize.x = ScaleForDpi(560, dpi);
+        minMax->ptMinTrackSize.y = ScaleForDpi(360, dpi);
+        return 0;
+    }
+
+    case WM_SETFOCUS:
+        if (g_kernelDialogEdit) {
+            SetFocus(g_kernelDialogEdit);
+        }
+        return 0;
+
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case IDC_KERNEL_APPLY: {
+            const int length = g_kernelDialogEdit ? GetWindowTextLengthW(g_kernelDialogEdit) : 0;
+            std::wstring text(static_cast<size_t>(std::max(0, length)) + 1, L'\0');
+            if (length > 0) {
+                GetWindowTextW(g_kernelDialogEdit, &text[0], length + 1);
+                text.resize(static_cast<size_t>(length));
+            } else {
+                text.clear();
+            }
+
+            text = NormalizeNewlinesToLF(text);
+            const std::string newKernel = WideToUtf8(text);
+            if (CompileKernelShader(newKernel, true)) {
+                std::wstring saveError;
+                if (!SaveKernelSourceToDisk(newKernel, &saveError)) {
+                    MessageBoxW(
+                        hwnd,
+                        (L"Kernel was compiled, but saving kernel.glsl failed.\r\n\r\n" + saveError).c_str(),
+                        L"Kernel Save Error",
+                        MB_OK | MB_ICONERROR);
+                    return 0;
+                }
+                DestroyWindow(hwnd);
+            }
+            return 0;
+        }
+
+        case IDC_KERNEL_CANCEL:
+            DestroyWindow(hwnd);
+            return 0;
+        }
+        break;
+
+    case WM_CLOSE:
+        DestroyWindow(hwnd);
+        return 0;
+
+    case WM_DESTROY:
+        g_kernelDialogEdit = nullptr;
+        g_kernelDialogApply = nullptr;
+        g_kernelDialogCancel = nullptr;
+        if (g_kernelDialogFont) {
+            DeleteObject(g_kernelDialogFont);
+            g_kernelDialogFont = nullptr;
+        }
+        g_kernelDialog = nullptr;
+        return 0;
+    }
+
+    return DefWindowProcW(hwnd, message, wParam, lParam);
+}
+
+bool RegisterKernelDialogClass(HINSTANCE instance)
+{
+    static bool registered = false;
+    if (registered) {
+        return true;
+    }
+
+    WNDCLASSEXW wc{};
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = KernelDialogProc;
+    wc.hInstance = instance;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wc.hIcon = g_hIcon;
+    wc.hIconSm = g_hIconSmall;
+    wc.lpszClassName = kKernelWindowClass;
+
+    if (!RegisterClassExW(&wc)) {
+        if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+            return false;
+        }
+    }
+
+    registered = true;
+    return true;
+}
+
+void OpenKernelDialog()
+{
+    if (g_kernelDialog) {
+        ShowWindow(g_kernelDialog, SW_SHOWNORMAL);
+        SetForegroundWindow(g_kernelDialog);
+        SetFocus(g_kernelDialogEdit);
+        return;
+    }
+
+    const HINSTANCE instance = GetModuleHandleW(nullptr);
+    if (!RegisterKernelDialogClass(instance)) {
+        MessageBoxW(g_hwnd, L"Failed to register the Kernel editor window class.", L"Error", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    RECT owner{};
+    GetWindowRect(g_hwnd, &owner);
+
+    const UINT dpi = GetWindowDpiSafe(g_hwnd);
+    const int width = ScaleForDpi(760, dpi);
+    const int height = ScaleForDpi(560, dpi);
+
+    g_kernelDialog = CreateWindowExW(
+        0,
+        kKernelWindowClass,
+        L"Kernel",
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+        0, 0, width, height,
+        g_hwnd,
+        nullptr,
+        instance,
+        nullptr);
+
+    if (!g_kernelDialog) {
+        MessageBoxW(g_hwnd, L"Failed to create the Kernel editor window.", L"Error", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    centerWindow(g_kernelDialog, g_hwnd);
+    ShowWindow(g_kernelDialog, SW_SHOWNORMAL);
+    UpdateWindow(g_kernelDialog);
+    SetForegroundWindow(g_kernelDialog);
+    SetFocus(g_kernelDialogEdit);
+}
+
+void AddKernelMenuItem(HWND hwnd)
+{
+    HMENU systemMenu = GetSystemMenu(hwnd, FALSE);
+    if (!systemMenu) {
+        return;
+    }
+
+    AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(systemMenu, MF_STRING, IDM_KERNEL, L"&Kernel...");
+    AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_TO_TASKBAR, L"Hide to taskbar");
+    AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_WHILE_WORKING, L"Hide while working");
+    AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(systemMenu, MF_STRING, IDM_HELP, L"&Help...");
+}
+
+void UpdateMouseButtonsFromCapture()
+{
+    if (!g_leftDown && !g_rightDown) {
+        ReleaseCapture();
+    }
+}
+
+int FindTouchIndex(DWORD id)
+{
+    for (int i = 0; i < 2; ++i) {
+        if (g_touches[i].active && g_touches[i].id == id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int FindFreeTouchIndex()
+{
+    for (int i = 0; i < 2; ++i) {
+        if (!g_touches[i].active) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int ActiveTouchCount() {
+    return static_cast<int>(g_touches[0].active) + static_cast<int>(g_touches[1].active);
+}
+
+void GetTouchPair(std::array<TouchPoint, 2>& out, int& count)
+{
+    count = 0;
+    for (const TouchPoint& touch : g_touches) {
+        if (touch.active && count < 2) {
+            out[static_cast<size_t>(count++)] = touch;
+        }
+    }
+}
+
+void HandleTouch(HWND hwnd, LPARAM lParam)
+{
+    const UINT count = LOWORD(lParam);
+    std::vector<TOUCHINPUT> inputs(count);
+    HTOUCHINPUT touchHandle = reinterpret_cast<HTOUCHINPUT>(lParam);
+    if (!GetTouchInputInfo(touchHandle, count, inputs.data(), sizeof(TOUCHINPUT))) {
+        return;
+    }
+
+    std::array<TouchPoint, 2> oldTouches{};
+    int oldCount = 0;
+    GetTouchPair(oldTouches, oldCount);
+
+    bool moved = false;
+
+    for (const TOUCHINPUT& ti : inputs) {
+        POINT point{
+            static_cast<LONG>(ti.x / 100),
+            static_cast<LONG>(ti.y / 100)
+        };
+        ScreenToClient(hwnd, &point);
+
+        if (ti.dwFlags & TOUCHEVENTF_DOWN) {
+            int index = FindTouchIndex(ti.dwID);
+            if (index < 0) {
+                index = FindFreeTouchIndex();
+            }
+            if (index >= 0) {
+                g_touches[index].active = true;
+                g_touches[index].id = ti.dwID;
+                g_touches[index].x = static_cast<float>(point.x);
+                g_touches[index].y = static_cast<float>(point.y);
+            }
+        }
+
+        if (ti.dwFlags & TOUCHEVENTF_MOVE) {
+            const int index = FindTouchIndex(ti.dwID);
+            if (index >= 0) {
+                if (std::fabs(g_touches[index].x - point.x) > 0.001f ||
+                    std::fabs(g_touches[index].y - point.y) > 0.001f) {
+                    moved = true;
+                }
+                g_touches[index].x = static_cast<float>(point.x);
+                g_touches[index].y = static_cast<float>(point.y);
+            }
+        }
+    }
+
+    const int newCountBeforeUp = ActiveTouchCount();
+    std::array<TouchPoint, 2> newTouches{};
+    int newCount = 0;
+    GetTouchPair(newTouches, newCount);
+
+    if (oldCount == 1 && newCount == 1 && moved) {
+        const float dx = newTouches[0].x - oldTouches[0].x;
+        const float dy = newTouches[0].y - oldTouches[0].y;
+        g_ang1 += dx * 0.002f;
+        g_ang2 += dy * 0.002f;
+    } else if (oldCount == 2 && newCount == 2 && moved) {
+        const float oldSumX = oldTouches[0].x + oldTouches[1].x;
+        const float oldSumY = oldTouches[0].y + oldTouches[1].y;
+        const float newSumX = newTouches[0].x + newTouches[1].x;
+        const float newSumY = newTouches[0].y + newTouches[1].y;
+        const float deltaX = newSumX - oldSumX;
+        const float deltaY = newSumY - oldSumY;
+
+        const float cx = static_cast<float>(g_renderWidth);
+        const float cy = static_cast<float>(g_renderHeight);
+        const float l = g_len * 2.0f / std::max(1.0f, cx + cy);
+
+        g_cenx += l * (-deltaX * std::sin(g_ang1) - deltaY * std::sin(g_ang2) * std::cos(g_ang1));
+        g_ceny += l * ( deltaY * std::cos(g_ang2));
+        g_cenz += l * ( deltaX * std::cos(g_ang1) - deltaY * std::sin(g_ang2) * std::sin(g_ang1));
+
+        const float oldDist = std::sqrt(
+            (oldTouches[0].x - oldTouches[1].x) * (oldTouches[0].x - oldTouches[1].x) +
+            (oldTouches[0].y - oldTouches[1].y) * (oldTouches[0].y - oldTouches[1].y) + 1.0f);
+        const float newDist = std::sqrt(
+            (newTouches[0].x - newTouches[1].x) * (newTouches[0].x - newTouches[1].x) +
+            (newTouches[0].y - newTouches[1].y) * (newTouches[0].y - newTouches[1].y) + 1.0f);
+        if (newDist > 0.001f) {
+            g_len *= oldDist / newDist;
+        }
+    }
+
+    for (const TOUCHINPUT& ti : inputs) {
+        if (ti.dwFlags & TOUCHEVENTF_UP) {
+            const int index = FindTouchIndex(ti.dwID);
+            if (index >= 0) {
+                g_touches[index] = {};
+            }
+        }
+    }
+
+    (void)newCountBeforeUp;
+    CloseTouchInputHandle(touchHandle);
+}
+
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (g_taskbarCreatedMessage && message == g_taskbarCreatedMessage) {
+        AddTrayIcon();
+        return 0;
+    }
+
+    switch (message) {
+    case WM_CREATE:
+        RegisterTouchWindow(hwnd, 0);
+        SetTimer(hwnd, 1, 16, nullptr);
+        SetLayeredWindowAttributes(hwnd, 0, g_alpha, LWA_ALPHA);
+        return 0;
+
+    case WM_DPICHANGED:
+        if (!IsZoomed(hwnd) && !IsIconic(hwnd)) {
+            const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
+            if (suggested) {
+                SetWindowPos(hwnd, nullptr,
+                    suggested->left,
+                    suggested->top,
+                    suggested->right - suggested->left,
+                    suggested->bottom - suggested->top,
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+        SaveWindowSettings();
+        return 0;
+
+    case WM_SIZE:
+        if (g_device && wParam != SIZE_MINIMIZED) {
+            const UINT width = static_cast<UINT>(std::max<LONG>(1, LOWORD(lParam)));
+            const UINT height = static_cast<UINT>(std::max<LONG>(1, HIWORD(lParam)));
+            if (ResizeSwapChain(width, height)) {
+                Render();
+            }
+        }
+        return 0;
+
+    case WM_SYSCOMMAND: {
+        const UINT_PTR command = static_cast<UINT_PTR>(wParam);
+        if (command == IDM_KERNEL) {
+            OpenKernelDialog();
+            return 0;
+        }
+        if (command == IDM_HIDE_TO_TASKBAR) {
+            HideToTaskbar();
+            return 0;
+        }
+        if (command == IDM_HIDE_WHILE_WORKING) {
+            HideWhileWorking();
+            return 0;
+        }
+        if (command == IDM_HELP) {
+            TaskDialog(hwnd, NULL, L"Help - vsbm for Windows", L"Here is the help document.",
+                L"Press Space to pause/resume animation.\r\n"
+                L"Press left button and move to rotate.\r\n"
+                L"Press right button to move the view.\r\n"
+                L"Scroll the wheel to zoom.\r\n"
+                L"Press Up to decrease opacity, or Down to increase it.\r\n"
+                L"Use the system menu to edit the Kernel or hide the window.\r\n"
+                L"The notification-area icon can restore the window or exit the application.\r\n"
+                L"Thanks for using this application!", TDCBF_CANCEL_BUTTON, TD_INFORMATION_ICON, NULL);
+            return 0;
+        }
+        break;
+    }
+
+    case WMAPP_TRAYICON:
+        if (lParam == WM_LBUTTONUP || lParam == WM_LBUTTONDBLCLK) {
+            if (g_hiddenWhileWorking) {
+                RestoreFromHideWhileWorking();
+            } else if (g_hiddenToTaskbar) {
+                RestoreFromHideToTaskbar();
+            } else {
+                ShowWindow(hwnd, SW_RESTORE);
+                SetForegroundWindow(hwnd);
+            }
+            return 0;
+        }
+        if (lParam == WM_RBUTTONUP) {
+            ShowTrayMenu();
+            return 0;
+        }
+        break;
+
+    case WM_TIMER:
+        if (wParam == 1 && !g_paused) {
+            g_ang1 += 0.01f;
+            Render();
+        }
+        return 0;
+
+    case WM_LBUTTONDOWN:
+        g_leftDown = true;
+        g_mouseMoved = false;
+        g_mouseX = GET_X_LPARAM(lParam);
+        g_mouseY = GET_Y_LPARAM(lParam);
+        SetCapture(hwnd);
+        return 0;
+
+    case WM_LBUTTONUP:
+        g_leftDown = false;
+        UpdateMouseButtonsFromCapture();
+        return 0;
+
+    case WM_RBUTTONDOWN:
+        g_rightDown = true;
+        g_mouseMoved = false;
+        g_mouseX = GET_X_LPARAM(lParam);
+        g_mouseY = GET_Y_LPARAM(lParam);
+        SetCapture(hwnd);
+        return 0;
+
+    case WM_RBUTTONUP:
+        g_rightDown = false;
+        UpdateMouseButtonsFromCapture();
+        return 0;
+
+    case WM_MOUSEMOVE: {
+        const int x = GET_X_LPARAM(lParam);
+        const int y = GET_Y_LPARAM(lParam);
+
+        if (g_leftDown) {
+            g_ang1 += static_cast<float>(x - g_mouseX) * 0.002f;
+            g_ang2 += static_cast<float>(y - g_mouseY) * 0.002f;
+            if (x != g_mouseX || y != g_mouseY) {
+                g_mouseMoved = true;
+            }
+        }
+
+        if (g_rightDown) {
+            const float cx = static_cast<float>(g_renderWidth);
+            const float cy = static_cast<float>(g_renderHeight);
+            const float l = g_len * 4.0f / std::max(1.0f, cx + cy);
+            const float dx = static_cast<float>(x - g_mouseX);
+            const float dy = static_cast<float>(y - g_mouseY);
+
+            g_cenx += l * (-dx * std::sin(g_ang1) - dy * std::sin(g_ang2) * std::cos(g_ang1));
+            g_ceny += l * (dy * std::cos(g_ang2));
+            g_cenz += l * (dx * std::cos(g_ang1) - dy * std::sin(g_ang2) * std::sin(g_ang1));
+            if (x != g_mouseX || y != g_mouseY) {
+                g_mouseMoved = true;
+            }
+        }
+
+        g_mouseX = x;
+        g_mouseY = y;
+        return 0;
+    }
+
+    case WM_MOUSEWHEEL: {
+        const short delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        g_len *= std::exp(-0.001f * static_cast<float>(delta));
+        g_len = std::max(0.01f, std::min(g_len, 1000.0f));
+        return 0;
+    }
+
+    case WM_TOUCH:
+        HandleTouch(hwnd, lParam);
+        return 0;
+
+    case WM_GETMINMAXINFO: {
+        auto* minMax = reinterpret_cast<MINMAXINFO*>(lParam);
+        minMax->ptMinTrackSize.x = 256;
+        minMax->ptMinTrackSize.y = 256;
+        return 0;
+    }
+
+    case WM_ERASEBKGND:
+        return 1;
+
+    case WM_KEYDOWN:
+        if (g_hiddenWhileWorking) {
+            return 0;
+        }
+
+        switch (wParam) {
+        case VK_SPACE:
+            if ((lParam & (1u << 30)) == 0) {
+                SetPaused(!g_paused);
+            }
+            break;
+
+        case VK_DOWN:
+            if (g_alpha < 255) {
+                ++g_alpha;
+                SetMainWindowAlpha(g_alpha);
+                SaveWindowSettings();
+            }
+            break;
+
+        case VK_UP:
+            if (g_alpha > 0) {
+                --g_alpha;
+                SetMainWindowAlpha(g_alpha);
+                SaveWindowSettings();
+            }
+            break;
+
+        default:
+            break;
+        }
+        return 0;
+
+    case WM_EXITSIZEMOVE:
+        SaveWindowSettings();
+        return 0;
+
+    case WM_NCHITTEST:
+        if (g_hiddenWhileWorking) {
+            return HTTRANSPARENT;
+        }
+        break;
+
+    case WM_MOUSEACTIVATE:
+        if (g_hiddenWhileWorking) {
+            return MA_NOACTIVATE;
+        }
+        break;
+
+    case WM_CLOSE:
+        SaveWindowSettings();
+        RemoveTrayIcon();
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & (~static_cast<LONG_PTR>(WS_EX_LAYERED)));
+        break;
+
+    case WM_DESTROY:
+        KillTimer(hwnd, 1);
+        UnregisterTouchWindow(hwnd);
+        RemoveTrayIcon();
+        SaveWindowSettings();
+        if (g_kernelDialog) {
+            DestroyWindow(g_kernelDialog);
+            g_kernelDialog = nullptr;
+            g_kernelDialogEdit = nullptr;
+        }
+        PostQuitMessage(0);
+        return 0;
+    }
+
+    return DefWindowProcW(hwnd, message, wParam, lParam);
+}
+
+} // namespace
+
+
+static bool LoadApplicationIcons(HINSTANCE instance)
+{
+    const int largeWidth = GetSystemMetrics(SM_CXICON);
+    const int largeHeight = GetSystemMetrics(SM_CYICON);
+    const int smallWidth = GetSystemMetrics(SM_CXSMICON);
+    const int smallHeight = GetSystemMetrics(SM_CYSMICON);
+
+    g_hIcon = static_cast<HICON>(LoadImageW(
+        instance,
+        MAKEINTRESOURCEW(IDI_ICON1),
+        IMAGE_ICON,
+        largeWidth,
+        largeHeight,
+        LR_DEFAULTCOLOR));
+
+    g_hIconSmall = static_cast<HICON>(LoadImageW(
+        instance,
+        MAKEINTRESOURCEW(IDI_ICON1),
+        IMAGE_ICON,
+        smallWidth,
+        smallHeight,
+        LR_DEFAULTCOLOR));
+
+    // A direct `cl main.cpp ...` build does not link the .rc file. In that
+    // case, fall back to the project's .ico next to the executable.
+    if (!g_hIcon || !g_hIconSmall) {
+        const std::wstring iconPath = GetExecutableDirectory() + L"\\vsbm.ico";
+
+        if (!g_hIcon) {
+            g_hIcon = static_cast<HICON>(LoadImageW(
+                nullptr,
+                iconPath.c_str(),
+                IMAGE_ICON,
+                largeWidth,
+                largeHeight,
+                LR_LOADFROMFILE | LR_DEFAULTCOLOR));
+        }
+
+        if (!g_hIconSmall) {
+            g_hIconSmall = static_cast<HICON>(LoadImageW(
+                nullptr,
+                iconPath.c_str(),
+                IMAGE_ICON,
+                smallWidth,
+                smallHeight,
+                LR_LOADFROMFILE | LR_DEFAULTCOLOR));
+        }
+    }
+
+    if (!g_hIcon && g_hIconSmall) {
+        g_hIcon = g_hIconSmall;
+    }
+    if (!g_hIconSmall && g_hIcon) {
+        g_hIconSmall = g_hIcon;
+    }
+
+    if (!g_hIconSmall && g_hIcon) {
+        g_hIconSmall = g_hIcon;
+    }
+
+    return g_hIcon != nullptr;
+}
+
+static void DestroyApplicationIcons()
+{
+    if (g_hIconSmall && g_hIconSmall != g_hIcon) {
+        DestroyIcon(g_hIconSmall);
+    }
+
+    if (g_hIcon) {
+        DestroyIcon(g_hIcon);
+    }
+
+    g_hIconSmall = nullptr;
+    g_hIcon = nullptr;
+}
+
+int WINAPI wWinMain(
+    _In_ HINSTANCE hInstance,
+    _In_opt_ HINSTANCE hPrevInstance,
+    _In_ LPWSTR lpCmdLine,
+    _In_ int nShowCmd
+) {
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    LoadWindowSettings();
+
+    g_taskbarCreatedMessage = RegisterWindowMessageW(L"TaskbarCreated");
+
+    LoadApplicationIcons(hInstance);
+
+    WNDCLASSEXW wc{};
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = hInstance;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+    wc.hIcon = wc.hIconSm = g_hIcon;
+    wc.lpszClassName = kWindowClass;
+
+    if (!RegisterClassExW(&wc)) {
+        return 1;
+    }
+
+    int windowX = CW_USEDEFAULT;
+    int windowY = CW_USEDEFAULT;
+    int windowWidth = kDefaultWindowWidth;
+    int windowHeight = kDefaultWindowHeight;
+
+    if (g_windowSettings.hasPositionAndSize) {
+        RECT saved{
+            g_windowSettings.left,
+            g_windowSettings.top,
+            g_windowSettings.left + g_windowSettings.width,
+            g_windowSettings.top + g_windowSettings.height
+        };
+        ClampSavedWindowRectToMonitor(saved);
+        windowX = saved.left;
+        windowY = saved.top;
+        windowWidth = saved.right - saved.left;
+        windowHeight = saved.bottom - saved.top;
+    }
+
+    g_hwnd = CreateWindowExW(
+        WS_EX_LAYERED,
+        kWindowClass,
+        kWindowTitle,
+        WS_OVERLAPPEDWINDOW,
+        windowX,
+        windowY,
+        windowWidth,
+        windowHeight,
+        nullptr,
+        nullptr,
+        hInstance,
+        nullptr);
+
+    if (!g_hwnd) {
+        return 2;
+    }
+
+    AddKernelMenuItem(g_hwnd);
+
+    if (!g_windowSettings.hasPositionAndSize) {
+        centerWindow(g_hwnd, 0);
+    }
+
+    SetMainWindowAlpha(g_alpha);
+    InitializeFpsCounter();
+    ApplyPausedTitle();
+
+    ShowWindow(g_hwnd, nShowCmd);
+    UpdateWindow(g_hwnd);
+
+    if (!InitD3D()) {
+        ShutdownD3D();
+        DestroyWindow(g_hwnd);
+        return 3;
+    }
+
+    Render();
+    AddTrayIcon();
+
+    MSG message{};
+    while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+    }
+
+    ShutdownD3D();
+    UnregisterClassW(kWindowClass, hInstance);
+    DestroyApplicationIcons();
+    return static_cast<int>(message.wParam);
+}

@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="vsbm-windows.vcxproj" Id="b1a1eb71-63ec-45ea-8349-6b9a32fdf2be" />
+</Solution>
