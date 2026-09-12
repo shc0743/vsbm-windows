@@ -1,4 +1,4 @@
-// Microsoft Visual C++ generated resource script.
+﻿// Microsoft Visual C++ generated resource script.
 //
 #pragma code_page(65001)
 
@@ -26,8 +26,8 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_DEFAULT
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,1
- PRODUCTVERSION 1,0,0,1
+ FILEVERSION 1,1,0,0
+ PRODUCTVERSION 1,1,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -43,13 +43,13 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "vsbm"
-            VALUE "FileDescription", "vsbm"
-            VALUE "FileVersion", "1.0.0.1"
-            VALUE "InternalName", "vsbm-win.exe"
+            VALUE "FileDescription", "vsbm for Windows"
+            VALUE "FileVersion", "1.1.0.0"
+            VALUE "InternalName", "vsbm-windows.exe"
             VALUE "LegalCopyright", "Copyright (C) 2026"
-            VALUE "OriginalFilename", "vsbm-win.exe"
+            VALUE "OriginalFilename", "vsbm-windows.exe"
             VALUE "ProductName", "Volume Shader BenchMark"
-            VALUE "ProductVersion", "1.0.0.1"
+            VALUE "ProductVersion", "1.1.0.0"
         END
     END
     BLOCK "VarFileInfo"
@@ -81,10 +81,9 @@ IDI_ICON1               ICON                    "vsbm.ico"
 
 
 /////////////////////////////////////////////////////////////////////////////
-// 中文(简体，中国) resources
 
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
-LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+LANGUAGE LANG_NEUTRAL, SUBLANG_DEFAULT
 
 #ifdef APSTUDIO_INVOKED
 /////////////////////////////////////////////////////////////////////////////
@@ -111,7 +110,7 @@ END
 
 #endif    // APSTUDIO_INVOKED
 
-#endif    // 中文(简体，中国) resources
+#endif    //  resources
 /////////////////////////////////////////////////////////////////////////////
 
 
