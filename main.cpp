@@ -25,6 +25,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <format>
 
 #include "resource.h"
 
@@ -83,41 +84,41 @@ constexpr int IDC_SETTINGS_CANCEL = 2204;
 
 constexpr char kVertexShader[] = R"HLSL(
 struct VSOutput {
-    float4 position : SV_Position;
-    float3 dir      : TEXCOORD0;
-    float3 localdir : TEXCOORD1;
+	float4 position : SV_Position;
+	float3 dir      : TEXCOORD0;
+	float3 localdir : TEXCOORD1;
 };
 
 cbuffer Camera : register(b0)
 {
-    float3 right;
-    float  _pad0;
-    float3 forward;
-    float  _pad1;
-    float3 up;
-    float  _pad2;
-    float3 origin;
-    float  x;
-    float  y;
-    float  len;
-    float  _pad3;
+	float3 right;
+	float  _pad0;
+	float3 forward;
+	float  _pad1;
+	float3 up;
+	float  _pad2;
+	float3 origin;
+	float  x;
+	float  y;
+	float  len;
+	float  _pad3;
 };
 
 VSOutput main(uint vertexId : SV_VertexID)
 {
-    // One oversized triangle covers the entire viewport. This removes the
-    // vertex-buffer/input-layout path entirely while preserving the exact
-    // [-1,1] screen coordinates used by the WebGL version.
-    float2 p;
-    if (vertexId == 0)      p = float2(-1.0, -1.0);
-    else if (vertexId == 1) p = float2(-1.0,  3.0);
-    else                    p = float2( 3.0, -1.0);
+	// One oversized triangle covers the entire viewport. This removes the
+	// vertex-buffer/input-layout path entirely while preserving the exact
+	// [-1,1] screen coordinates used by the WebGL version.
+	float2 p;
+	if (vertexId == 0)      p = float2(-1.0, -1.0);
+	else if (vertexId == 1) p = float2(-1.0,  3.0);
+	else                    p = float2( 3.0, -1.0);
 
-    VSOutput output;
-    output.position = float4(p, 0.0, 1.0);
-    output.dir = forward + right * p.x * x + up * p.y * y;
-    output.localdir = float3(p.x * x, p.y * y, -1.0);
-    return output;
+	VSOutput output;
+	output.position = float4(p, 0.0, 1.0);
+	output.dir = forward + right * p.x * x + up * p.y * y;
+	output.localdir = float3(p.x * x, p.y * y, -1.0);
+	return output;
 }
 )HLSL";
 
@@ -129,24 +130,24 @@ constexpr char kPixelShaderPrefix[] = R"HLSL(
 #define SOLVER 8
 
 struct PSInput {
-    float4 position : SV_Position;
-    float3 dir      : TEXCOORD0;
-    float3 localdir : TEXCOORD1;
+	float4 position : SV_Position;
+	float3 dir      : TEXCOORD0;
+	float3 localdir : TEXCOORD1;
 };
 
 cbuffer Camera : register(b0)
 {
-    float3 right;
-    float  _pad0;
-    float3 forward;
-    float  _pad1;
-    float3 up;
-    float  _pad2;
-    float3 origin;
-    float  x;
-    float  y;
-    float  len;
-    float  _pad3;
+	float3 right;
+	float  _pad0;
+	float3 forward;
+	float  _pad1;
+	float3 up;
+	float  _pad2;
+	float3 origin;
+	float  x;
+	float  y;
+	float  len;
+	float  _pad3;
 };
 
 )HLSL";
@@ -155,174 +156,174 @@ constexpr char kPixelShaderSuffix[] = R"HLSL(
 
 float4 main(PSInput input) : SV_Target
 {
-    float3 color = float3(0.0, 0.0, 0.0);
-    int hit = 0;
-    float r3 = 0.0;
+	float3 color = float3(0.0, 0.0, 0.0);
+	int hit = 0;
+	float r3 = 0.0;
 
-    const float stepSize = 0.002;
-    float v1 = kernal(origin + input.dir * (stepSize * len));
-    float v2 = kernal(origin);
+	const float stepSize = 0.002;
+	float v1 = kernal(origin + input.dir * (stepSize * len));
+	float v2 = kernal(origin);
 
-    for (int k = 2; k < 1002; ++k) {
-        float3 ver = origin + input.dir * (stepSize * len * (float)k);
-        float v = kernal(ver);
+	for (int k = 2; k < 1002; ++k) {
+		float3 ver = origin + input.dir * (stepSize * len * (float)k);
+		float v = kernal(ver);
 
-        if (v > 0.0 && v1 < 0.0) {
-            float r1 = stepSize * len * (float)(k - 1);
-            float r2 = stepSize * len * (float)k;
-            float m1 = kernal(origin + input.dir * r1);
-            float m2 = kernal(origin + input.dir * r2);
+		if (v > 0.0 && v1 < 0.0) {
+			float r1 = stepSize * len * (float)(k - 1);
+			float r2 = stepSize * len * (float)k;
+			float m1 = kernal(origin + input.dir * r1);
+			float m2 = kernal(origin + input.dir * r2);
 
-            for (int l = 0; l < SOLVER; ++l) {
-                r3 = r1 * 0.5 + r2 * 0.5;
-                float m3 = kernal(origin + input.dir * r3);
-                if (m3 > 0.0) {
-                    r2 = r3;
-                    m2 = m3;
-                } else {
-                    r1 = r3;
-                    m1 = m3;
-                }
-            }
+			for (int l = 0; l < SOLVER; ++l) {
+				r3 = r1 * 0.5 + r2 * 0.5;
+				float m3 = kernal(origin + input.dir * r3);
+				if (m3 > 0.0) {
+					r2 = r3;
+					m2 = m3;
+				} else {
+					r1 = r3;
+					m1 = m3;
+				}
+			}
 
-            if (r3 < 2.0 * len) {
-                hit = 1;
-                break;
-            }
-        }
+			if (r3 < 2.0 * len) {
+				hit = 1;
+				break;
+			}
+		}
 
-        if (v < v1 && v1 > v2 && v1 < 0.0 && (v1 * 2.0 > v || v1 * 2.0 > v2)) {
-            float r1 = stepSize * len * (float)(k - 2);
-            float r2 = stepSize * len * ((float)(k - 2) + 2.0 * M_L);
-            float r3Local = stepSize * len * ((float)(k - 2) + 2.0 * M_R);
-            float r4 = stepSize * len * (float)k;
-            float m2 = kernal(origin + input.dir * r2);
-            float m3 = kernal(origin + input.dir * r3Local);
+		if (v < v1 && v1 > v2 && v1 < 0.0 && (v1 * 2.0 > v || v1 * 2.0 > v2)) {
+			float r1 = stepSize * len * (float)(k - 2);
+			float r2 = stepSize * len * ((float)(k - 2) + 2.0 * M_L);
+			float r3Local = stepSize * len * ((float)(k - 2) + 2.0 * M_R);
+			float r4 = stepSize * len * (float)k;
+			float m2 = kernal(origin + input.dir * r2);
+			float m3 = kernal(origin + input.dir * r3Local);
 
-            for (int l = 0; l < MAXR; ++l) {
-                if (m2 > m3) {
-                    r4 = r3Local;
-                    r3Local = r2;
-                    r2 = r4 * M_L + r1 * M_R;
-                    m3 = m2;
-                    m2 = kernal(origin + input.dir * r2);
-                } else {
-                    r1 = r2;
-                    r2 = r3Local;
-                    r3Local = r4 * M_R + r1 * M_L;
-                    m2 = m3;
-                    m3 = kernal(origin + input.dir * r3Local);
-                }
-            }
+			for (int l = 0; l < MAXR; ++l) {
+				if (m2 > m3) {
+					r4 = r3Local;
+					r3Local = r2;
+					r2 = r4 * M_L + r1 * M_R;
+					m3 = m2;
+					m2 = kernal(origin + input.dir * r2);
+				} else {
+					r1 = r2;
+					r2 = r3Local;
+					r3Local = r4 * M_R + r1 * M_L;
+					m2 = m3;
+					m3 = kernal(origin + input.dir * r3Local);
+				}
+			}
 
-            if (m2 > 0.0) {
-                r1 = stepSize * len * (float)(k - 2);
-                float rr2 = r2;
-                float rr3 = rr2;
-                float m1 = kernal(origin + input.dir * r1);
-                float mm2 = kernal(origin + input.dir * rr2);
+			if (m2 > 0.0) {
+				r1 = stepSize * len * (float)(k - 2);
+				float rr2 = r2;
+				float rr3 = rr2;
+				float m1 = kernal(origin + input.dir * r1);
+				float mm2 = kernal(origin + input.dir * rr2);
 
-                for (int l = 0; l < SOLVER; ++l) {
-                    rr3 = r1 * 0.5 + rr2 * 0.5;
-                    float mm3 = kernal(origin + input.dir * rr3);
-                    if (mm3 > 0.0) {
-                        rr2 = rr3;
-                        mm2 = mm3;
-                    } else {
-                        r1 = rr3;
-                        m1 = mm3;
-                    }
-                }
+				for (int l = 0; l < SOLVER; ++l) {
+					rr3 = r1 * 0.5 + rr2 * 0.5;
+					float mm3 = kernal(origin + input.dir * rr3);
+					if (mm3 > 0.0) {
+						rr2 = rr3;
+						mm2 = mm3;
+					} else {
+						r1 = rr3;
+						m1 = mm3;
+					}
+				}
 
-                if (rr3 < 2.0 * len && rr3 > stepSize * len) {
-                    r3 = rr3;
-                    hit = 1;
-                    break;
-                }
-            } else if (m3 > 0.0) {
-                r1 = stepSize * len * (float)(k - 2);
-                float rr2 = r3Local;
-                float rr3 = rr2;
-                float m1 = kernal(origin + input.dir * r1);
-                float mm2 = kernal(origin + input.dir * rr2);
+				if (rr3 < 2.0 * len && rr3 > stepSize * len) {
+					r3 = rr3;
+					hit = 1;
+					break;
+				}
+			} else if (m3 > 0.0) {
+				r1 = stepSize * len * (float)(k - 2);
+				float rr2 = r3Local;
+				float rr3 = rr2;
+				float m1 = kernal(origin + input.dir * r1);
+				float mm2 = kernal(origin + input.dir * rr2);
 
-                for (int l = 0; l < SOLVER; ++l) {
-                    rr3 = r1 * 0.5 + rr2 * 0.5;
-                    float mm3 = kernal(origin + input.dir * rr3);
-                    if (mm3 > 0.0) {
-                        rr2 = rr3;
-                        mm2 = mm3;
-                    } else {
-                        r1 = rr3;
-                        m1 = mm3;
-                    }
-                }
+				for (int l = 0; l < SOLVER; ++l) {
+					rr3 = r1 * 0.5 + rr2 * 0.5;
+					float mm3 = kernal(origin + input.dir * rr3);
+					if (mm3 > 0.0) {
+						rr2 = rr3;
+						mm2 = mm3;
+					} else {
+						r1 = rr3;
+						m1 = mm3;
+					}
+				}
 
-                if (rr3 < 2.0 * len && rr3 > stepSize * len) {
-                    r3 = rr3;
-                    hit = 1;
-                    break;
-                }
-            }
-        }
+				if (rr3 < 2.0 * len && rr3 > stepSize * len) {
+					r3 = rr3;
+					hit = 1;
+					break;
+				}
+			}
+		}
 
-        v2 = v1;
-        v1 = v;
-    }
+		v2 = v1;
+		v1 = v;
+	}
 
-    if (hit == 1) {
-        float3 ver = origin + input.dir * r3;
-        float radiusSquared = dot(ver, ver);
+	if (hit == 1) {
+		float3 ver = origin + input.dir * r3;
+		float radiusSquared = dot(ver, ver);
 
-        float3 n;
-        const float normalOffset = 0.00025;
-        n.x = kernal(ver - right * (r3 * normalOffset)) - kernal(ver + right * (r3 * normalOffset));
-        n.y = kernal(ver - up * (r3 * normalOffset)) - kernal(ver + up * (r3 * normalOffset));
-        n.z = kernal(ver + forward * (r3 * normalOffset)) - kernal(ver - forward * (r3 * normalOffset));
-        float nLengthSquared = dot(n, n);
-        n *= 1.0 / sqrt(nLengthSquared);
+		float3 n;
+		const float normalOffset = 0.00025;
+		n.x = kernal(ver - right * (r3 * normalOffset)) - kernal(ver + right * (r3 * normalOffset));
+		n.y = kernal(ver - up * (r3 * normalOffset)) - kernal(ver + up * (r3 * normalOffset));
+		n.z = kernal(ver + forward * (r3 * normalOffset)) - kernal(ver - forward * (r3 * normalOffset));
+		float nLengthSquared = dot(n, n);
+		n *= 1.0 / sqrt(nLengthSquared);
 
-        float3 viewLocal = input.localdir;
-        viewLocal *= 1.0 / sqrt(dot(viewLocal, viewLocal));
+		float3 viewLocal = input.localdir;
+		viewLocal *= 1.0 / sqrt(dot(viewLocal, viewLocal));
 
-        float3 refl = n * (-2.0 * dot(viewLocal, n)) + viewLocal;
-        float lighting = refl.x * 0.276 + refl.y * 0.920 + refl.z * 0.276;
-        float normalLighting = n.x * 0.276 + n.y * 0.920 + n.z * 0.276;
-        lighting = max(0.0, lighting);
-        lighting = lighting * lighting * lighting * lighting;
-        lighting = lighting * 0.45 + normalLighting * 0.25 + 0.3;
+		float3 refl = n * (-2.0 * dot(viewLocal, n)) + viewLocal;
+		float lighting = refl.x * 0.276 + refl.y * 0.920 + refl.z * 0.276;
+		float normalLighting = n.x * 0.276 + n.y * 0.920 + n.z * 0.276;
+		lighting = max(0.0, lighting);
+		lighting = lighting * lighting * lighting * lighting;
+		lighting = lighting * 0.45 + normalLighting * 0.25 + 0.3;
 
-        n.x = sin(radiusSquared * 10.0) * 0.5 + 0.5;
-        n.y = sin(radiusSquared * 10.0 + 2.05) * 0.5 + 0.5;
-        n.z = sin(radiusSquared * 10.0 - 2.05) * 0.5 + 0.5;
-        color = n * lighting;
-    }
+		n.x = sin(radiusSquared * 10.0) * 0.5 + 0.5;
+		n.y = sin(radiusSquared * 10.0 + 2.05) * 0.5 + 0.5;
+		n.z = sin(radiusSquared * 10.0 - 2.05) * 0.5 + 0.5;
+		color = n * lighting;
+	}
 
-    return float4(color, 1.0);
+	return float4(color, 1.0);
 }
 )HLSL";
 
 struct alignas(16) CameraConstants {
-    float right[3];
-    float pad0;
-    float forward[3];
-    float pad1;
-    float up[3];
-    float pad2;
-    float origin[3];
-    float x;
-    float y;
-    float len;
-    float pad3;
+	float right[3];
+	float pad0;
+	float forward[3];
+	float pad1;
+	float up[3];
+	float pad2;
+	float origin[3];
+	float x;
+	float y;
+	float len;
+	float pad3;
 };
 
 static_assert(sizeof(CameraConstants) == 80, "CameraConstants must be 80 bytes for D3D11 constant-buffer packing");
 
 struct TouchPoint {
-    bool active = false;
-    DWORD id = 0;
-    float x = 0.0f;
-    float y = 0.0f;
+	bool active = false;
+	DWORD id = 0;
+	float x = 0.0f;
+	float y = 0.0f;
 };
 
 HWND g_hwnd = nullptr;
@@ -393,6 +394,8 @@ LARGE_INTEGER g_fpsFrequency{};
 LARGE_INTEGER g_fpsSampleStart{};
 uint64_t g_fpsFrameCount = 0;
 double g_fps = 0.0;
+double g_maxFps = 0.0;
+double g_maxFpsHistory = 0.0;
 
 uint64_t g_totalPresentedFrames = 0;
 LARGE_INTEGER g_activeSegmentStart{};
@@ -410,634 +413,670 @@ std::wstring GetExecutableDirectory();
 
 std::wstring GetIniPath()
 {
-    return GetExecutableDirectory() + L"\\vsbm-windows.ini";
+	return GetExecutableDirectory() + L"\\vsbm-windows.ini";
 }
 
 bool ReadIniInt(const wchar_t* section, const wchar_t* key, int& value)
 {
-    wchar_t buffer[64]{};
-    const std::wstring ini = GetIniPath();
-    if (!GetPrivateProfileStringW(section, key, L"", buffer, static_cast<DWORD>(std::size(buffer)), ini.c_str())) {
-        return false;
-    }
+	wchar_t buffer[64]{};
+	const std::wstring ini = GetIniPath();
+	if (!GetPrivateProfileStringW(section, key, L"", buffer, static_cast<DWORD>(std::size(buffer)), ini.c_str())) {
+		return false;
+	}
 
-    wchar_t* end = nullptr;
-    const long parsed = wcstol(buffer, &end, 10);
-    if (end == buffer || *end != L'\0' ||
-        parsed < static_cast<long>(std::numeric_limits<int>::min()) ||
-        parsed > static_cast<long>(std::numeric_limits<int>::max())) {
-        return false;
-    }
+	wchar_t* end = nullptr;
+	const long parsed = wcstol(buffer, &end, 10);
+	if (end == buffer || *end != L'\0' ||
+		parsed < static_cast<long>(std::numeric_limits<int>::min()) ||
+		parsed > static_cast<long>(std::numeric_limits<int>::max())) {
+		return false;
+	}
 
-    value = static_cast<int>(parsed);
-    return true;
+	value = static_cast<int>(parsed);
+	return true;
 }
 
 void WriteIniInt(const wchar_t* section, const wchar_t* key, int value)
 {
-    wchar_t buffer[64]{};
-    swprintf_s(buffer, L"%d", value);
-    WritePrivateProfileStringW(section, key, buffer, GetIniPath().c_str());
+	WritePrivateProfileStringW(section, key, std::to_wstring(value).c_str(), GetIniPath().c_str());
+}
+
+bool ReadIniStr(const wchar_t* section, const wchar_t* key, std::wstring& value,
+	const std::wstring& defaultValue = L"")
+{
+	auto buffer = std::make_unique<WCHAR[]>(32768);
+	const std::wstring ini = GetIniPath();
+	if (!GetPrivateProfileStringW(section, key, L"", buffer.get(), 32768, ini.c_str())) {
+		return false;
+	}
+	value = buffer.get();
+	return true;
+}
+
+void WriteIniStr(const wchar_t* section, const wchar_t* key,
+	const std::wstring& value)
+{
+	WritePrivateProfileStringW(section, key, value.c_str(), GetIniPath().c_str());
 }
 
 struct WindowSettings {
-    bool hasPositionAndSize = false;
-    int left = CW_USEDEFAULT;
-    int top = CW_USEDEFAULT;
-    int width = kDefaultWindowWidth;
-    int height = kDefaultWindowHeight;
-    BYTE alpha = 255;
+	bool hasPositionAndSize = false;
+	int left = CW_USEDEFAULT;
+	int top = CW_USEDEFAULT;
+	int width = kDefaultWindowWidth;
+	int height = kDefaultWindowHeight;
+	BYTE alpha = 255;
 };
 
 WindowSettings g_windowSettings{};
 
-void LoadWindowSettings()
+DECLSPEC_NOINLINE void LoadWindowSettings()
 {
-    int left = 0, top = 0, width = 0, height = 0, opacity = 255;
-    const bool haveLeft = ReadIniInt(L"Window", L"Left", left);
-    const bool haveTop = ReadIniInt(L"Window", L"Top", top);
-    const bool haveWidth = ReadIniInt(L"Window", L"Width", width);
-    const bool haveHeight = ReadIniInt(L"Window", L"Height", height);
+	int left = 0, top = 0, width = 0, height = 0, opacity = 255;
+	const bool haveLeft = ReadIniInt(L"Window", L"Left", left);
+	const bool haveTop = ReadIniInt(L"Window", L"Top", top);
+	const bool haveWidth = ReadIniInt(L"Window", L"Width", width);
+	const bool haveHeight = ReadIniInt(L"Window", L"Height", height);
 
-    if (haveLeft && haveTop && haveWidth && haveHeight &&
-        width >= 256 && height >= 256 && width <= 16384 && height <= 16384) {
-        g_windowSettings.hasPositionAndSize = true;
-        g_windowSettings.left = left;
-        g_windowSettings.top = top;
-        g_windowSettings.width = width;
-        g_windowSettings.height = height;
-    }
+	if (haveLeft && haveTop && haveWidth && haveHeight &&
+		width >= 256 && height >= 256 && width <= 16384 && height <= 16384) {
+		g_windowSettings.hasPositionAndSize = true;
+		g_windowSettings.left = left;
+		g_windowSettings.top = top;
+		g_windowSettings.width = width;
+		g_windowSettings.height = height;
+	}
 
-    if (ReadIniInt(L"Window", L"Opacity", opacity)) {
-        opacity = std::max(0, std::min(255, opacity));
-        g_windowSettings.alpha = static_cast<BYTE>(opacity);
-    }
+	if (ReadIniInt(L"Window", L"Opacity", opacity)) {
+		opacity = std::max(0, std::min(255, opacity));
+		g_windowSettings.alpha = static_cast<BYTE>(opacity);
+	}
 
-    ReadIniInt(L"Window", L"AskUserWhenConflict", g_askUserWhenConflict);
+	ReadIniInt(L"Window", L"AskUserWhenConflict", g_askUserWhenConflict);
 
-    int frameRateLimit = static_cast<int>(g_frameRateLimit);
-    if (ReadIniInt(L"Settings", L"FrameRateLimit", frameRateLimit) &&
-        frameRateLimit >= 0 && frameRateLimit <= 1000000) {
-        g_frameRateLimit = static_cast<UINT>(frameRateLimit);
-    }
+	int frameRateLimit = static_cast<int>(g_frameRateLimit);
+	if (ReadIniInt(L"Settings", L"FrameRateLimit", frameRateLimit) &&
+		frameRateLimit >= 0 && frameRateLimit <= 1000000) {
+		g_frameRateLimit = static_cast<UINT>(frameRateLimit);
+	}
 
-    int vsyncEnabled = g_vsyncEnabled ? 1 : 0;
-    if (ReadIniInt(L"Settings", L"VsyncEnabled", vsyncEnabled)) {
-        g_vsyncEnabled = vsyncEnabled != 0;
-    }
+	int vsyncEnabled = g_vsyncEnabled ? 1 : 0;
+	if (ReadIniInt(L"Settings", L"VsyncEnabled", vsyncEnabled)) {
+		g_vsyncEnabled = vsyncEnabled != 0;
+	}
 
-    g_alpha = g_windowSettings.alpha;
+	WCHAR compName[64]{};
+	DWORD compSize = 63;
+	GetComputerNameW(compName, &compSize);
+	std::wstring histFpsMax;
+	if (ReadIniStr(L"Statistics", std::format(L"Computer-{}_MaxFps", compName).c_str(), histFpsMax, L"0.0")) try {
+		g_maxFpsHistory = std::stod(histFpsMax);
+	} catch (...) {};
+
+	g_alpha = g_windowSettings.alpha;
 }
 
 bool GetNormalWindowRect(HWND hwnd, RECT& rect)
 {
-    WINDOWPLACEMENT placement{};
-    placement.length = sizeof(placement);
-    if (!GetWindowPlacement(hwnd, &placement)) {
-        return false;
-    }
+	WINDOWPLACEMENT placement{};
+	placement.length = sizeof(placement);
+	if (!GetWindowPlacement(hwnd, &placement)) {
+		return false;
+	}
 
-    rect = placement.rcNormalPosition;
-    return rect.right > rect.left && rect.bottom > rect.top;
+	rect = placement.rcNormalPosition;
+	return rect.right > rect.left && rect.bottom > rect.top;
 }
 
 void SaveWindowSettings()
 {
-    if (!g_hwnd) {
-        return;
-    }
+	if (!g_hwnd) {
+		return;
+	}
 
-    RECT rect{};
-    if (GetNormalWindowRect(g_hwnd, rect)) {
-        WriteIniInt(L"Window", L"Left", rect.left);
-        WriteIniInt(L"Window", L"Top", rect.top);
-        WriteIniInt(L"Window", L"Width", rect.right - rect.left);
-        WriteIniInt(L"Window", L"Height", rect.bottom - rect.top);
-    }
+	RECT rect{};
+	if (GetNormalWindowRect(g_hwnd, rect)) {
+		WriteIniInt(L"Window", L"Left", rect.left);
+		WriteIniInt(L"Window", L"Top", rect.top);
+		WriteIniInt(L"Window", L"Width", rect.right - rect.left);
+		WriteIniInt(L"Window", L"Height", rect.bottom - rect.top);
+	}
 
-    WriteIniInt(L"Window", L"Opacity", static_cast<int>(g_alpha));
-    WriteIniInt(L"Window", L"AskUserWhenConflict", static_cast<int>(g_askUserWhenConflict));
-    WriteIniInt(L"Settings", L"FrameRateLimit", static_cast<int>(g_frameRateLimit));
-    WriteIniInt(L"Settings", L"VsyncEnabled", g_vsyncEnabled ? 1 : 0);
+	WriteIniInt(L"Window", L"Opacity", static_cast<int>(g_alpha));
+	WriteIniInt(L"Window", L"AskUserWhenConflict", static_cast<int>(g_askUserWhenConflict));
+
+	WriteIniInt(L"Settings", L"FrameRateLimit", static_cast<int>(g_frameRateLimit));
+	WriteIniInt(L"Settings", L"VsyncEnabled", g_vsyncEnabled ? 1 : 0);
+
+	WCHAR compName[64]{};
+	DWORD compSize = 63;
+	GetComputerNameW(compName, &compSize);
+
+	if (g_maxFpsHistory < g_maxFps) g_maxFpsHistory = g_maxFps;
+	WriteIniStr(L"Statistics", std::format(L"Computer-{}_MaxFps", compName).c_str(), std::to_wstring(g_maxFpsHistory).c_str());
 }
 
 void ClampSavedWindowRectToMonitor(RECT& rect)
 {
-    HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    if (!monitor || !GetMonitorInfoW(monitor, &mi)) {
-        return;
-    }
+	HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
+	MONITORINFO mi{};
+	mi.cbSize = sizeof(mi);
+	if (!monitor || !GetMonitorInfoW(monitor, &mi)) {
+		return;
+	}
 
-    const int width = rect.right - rect.left;
-    const int height = rect.bottom - rect.top;
-    const RECT work = mi.rcWork;
+	const int width = rect.right - rect.left;
+	const int height = rect.bottom - rect.top;
+	const RECT work = mi.rcWork;
 
-    if (rect.right <= work.left + 40 || rect.left >= work.right - 40) {
-        rect.left = work.left + (work.right - work.left - width) / 2;
-    }
-    if (rect.bottom <= work.top + 40 || rect.top >= work.bottom - 40) {
-        rect.top = work.top + (work.bottom - work.top - height) / 2;
-    }
+	if (rect.right <= work.left + 40 || rect.left >= work.right - 40) {
+		rect.left = work.left + (work.right - work.left - width) / 2;
+	}
+	if (rect.bottom <= work.top + 40 || rect.top >= work.bottom - 40) {
+		rect.top = work.top + (work.bottom - work.top - height) / 2;
+	}
 }
 
 void UpdateWindowTitle()
 {
-    if (!g_hwnd) {
-        return;
-    }
+	if (!g_hwnd) {
+		return;
+	}
 
-    wchar_t title[128]{};
-    const unsigned displayedFps = g_fps > 0.0
-        ? static_cast<unsigned>(std::lround(g_fps))
-        : 0u;
+	wchar_t title[128]{};
+	const unsigned displayedFps = g_fps > 0.0
+		? static_cast<unsigned>(std::lround(g_fps))
+		: 0u;
 
-    const wchar_t* modifiedPrefix = (g_kernel != g_defaultKernel) ? L"* " : L"";
-    if (g_paused) {
-        swprintf_s(title, L"%s%s - Paused - %u FPS", modifiedPrefix, kWindowTitle, displayedFps);
-    } else {
-        swprintf_s(title, L"%s%s - %u FPS", modifiedPrefix, kWindowTitle, displayedFps);
-    }
+	const wchar_t* modifiedPrefix = (g_kernel != g_defaultKernel) ? L"* " : L"";
+	if (g_paused) {
+		swprintf_s(title, L"%s%s - Paused - %u FPS", modifiedPrefix, kWindowTitle, displayedFps);
+	} else {
+		swprintf_s(title, L"%s%s - %u FPS", modifiedPrefix, kWindowTitle, displayedFps);
+	}
 
-    SetWindowTextW(g_hwnd, title);
+	SetWindowTextW(g_hwnd, title);
 }
 
 void ApplyPausedTitle()
 {
-    UpdateWindowTitle();
+	UpdateWindowTitle();
 }
 
 double GetElapsedSeconds(LARGE_INTEGER start, LARGE_INTEGER end)
 {
-    if (g_fpsFrequency.QuadPart <= 0) {
-        return 0.0;
-    }
-    return static_cast<double>(end.QuadPart - start.QuadPart) /
-        static_cast<double>(g_fpsFrequency.QuadPart);
+	if (g_fpsFrequency.QuadPart <= 0) {
+		return 0.0;
+	}
+	return static_cast<double>(end.QuadPart - start.QuadPart) /
+		static_cast<double>(g_fpsFrequency.QuadPart);
 }
 
 void InitializeFpsCounter()
 {
-    QueryPerformanceFrequency(&g_fpsFrequency);
-    QueryPerformanceCounter(&g_fpsSampleStart);
-    g_activeSegmentStart = g_fpsSampleStart;
-    g_lastFrameTime = g_fpsSampleStart;
-    g_fpsFrameCount = 0;
-    g_fps = 0.0;
+	QueryPerformanceFrequency(&g_fpsFrequency);
+	QueryPerformanceCounter(&g_fpsSampleStart);
+	g_activeSegmentStart = g_fpsSampleStart;
+	g_lastFrameTime = g_fpsSampleStart;
+	g_fpsFrameCount = 0;
+	g_fps = 0.0;
+	g_maxFps = 0.0;
 }
 
 void RecordPresentedFrame()
 {
-    if (g_fpsFrequency.QuadPart <= 0) {
-        return;
-    }
+	if (g_fpsFrequency.QuadPart <= 0) {
+		return;
+	}
 
-    ++g_totalPresentedFrames;
-    ++g_fpsFrameCount;
+	++g_totalPresentedFrames;
+	++g_fpsFrameCount;
 
-    LARGE_INTEGER now{};
-    QueryPerformanceCounter(&now);
-    const double elapsed = GetElapsedSeconds(g_fpsSampleStart, now);
+	LARGE_INTEGER now{};
+	QueryPerformanceCounter(&now);
+	const double elapsed = GetElapsedSeconds(g_fpsSampleStart, now);
 
-    // Update the title twice per second. This avoids changing the caption on
-    // every frame while still making the displayed FPS responsive.
-    if (elapsed >= 0.5) {
-        g_fps = static_cast<double>(g_fpsFrameCount) / elapsed;
-        g_fpsFrameCount = 0;
-        g_fpsSampleStart = now;
-        UpdateWindowTitle();
-    }
+	// Update the title twice per second. This avoids changing the caption on
+	// every frame while still making the displayed FPS responsive.
+	if (elapsed >= 0.5) {
+		g_fps = static_cast<double>(g_fpsFrameCount) / elapsed;
+		if (g_fps > g_maxFps) {
+			g_maxFps = g_fps;
+		}
+		g_fpsFrameCount = 0;
+		g_fpsSampleStart = now;
+		UpdateWindowTitle();
+	}
 }
 
 double GetActiveSeconds()
 {
-    LARGE_INTEGER now{};
-    QueryPerformanceCounter(&now);
+	LARGE_INTEGER now{};
+	QueryPerformanceCounter(&now);
 
-    double result = g_activeSeconds;
-    if (!g_paused) {
-        result += GetElapsedSeconds(g_activeSegmentStart, now);
-    }
-    return result;
+	double result = g_activeSeconds;
+	if (!g_paused) {
+		result += GetElapsedSeconds(g_activeSegmentStart, now);
+	}
+	return result;
 }
 
 void SetPaused(bool paused)
 {
-    if (g_paused == paused) {
-        ApplyPausedTitle();
-        return;
-    }
+	if (g_paused == paused) {
+		ApplyPausedTitle();
+		return;
+	}
 
-    LARGE_INTEGER now{};
-    QueryPerformanceCounter(&now);
-    if (paused) {
-        g_activeSeconds += GetElapsedSeconds(g_activeSegmentStart, now);
-    } else {
-        g_activeSegmentStart = now;
-        g_fpsSampleStart = now;
-        g_fpsFrameCount = 0;
-    }
+	LARGE_INTEGER now{};
+	QueryPerformanceCounter(&now);
+	if (paused) {
+		g_activeSeconds += GetElapsedSeconds(g_activeSegmentStart, now);
+	} else {
+		g_activeSegmentStart = now;
+		g_fpsSampleStart = now;
+		g_fpsFrameCount = 0;
+	}
 
-    g_paused = paused;
-    ApplyPausedTitle();
+	g_paused = paused;
+	ApplyPausedTitle();
 }
 
 void SetMainWindowAlpha(BYTE alpha)
 {
-    g_alpha = alpha;
-    if (g_hwnd) {
-        SetLayeredWindowAttributes(g_hwnd, 0, g_alpha, LWA_ALPHA);
-    }
+	g_alpha = alpha;
+	if (g_hwnd) {
+		SetLayeredWindowAttributes(g_hwnd, 0, g_alpha, LWA_ALPHA);
+	}
 }
 
 bool SaveKernelSourceToDisk(const std::string& source, std::wstring* errorText = nullptr)
 {
-    const std::wstring path = GetExecutableDirectory() + L"\\kernel.glsl";
-    const std::wstring temporaryPath = path + L".tmp";
+	const std::wstring path = GetExecutableDirectory() + L"\\kernel.glsl";
+	const std::wstring temporaryPath = path + L".tmp";
 
-    HANDLE file = CreateFileW(
-        temporaryPath.c_str(),
-        GENERIC_WRITE,
-        0,
-        nullptr,
-        CREATE_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
+	HANDLE file = CreateFileW(
+		temporaryPath.c_str(),
+		GENERIC_WRITE,
+		0,
+		nullptr,
+		CREATE_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL,
+		nullptr);
 
-    if (file == INVALID_HANDLE_VALUE) {
-        if (errorText) {
-            *errorText = L"Cannot create temporary kernel file. Win32 error " +
-                std::to_wstring(GetLastError()) + L".";
-        }
-        return false;
-    }
+	if (file == INVALID_HANDLE_VALUE) {
+		if (errorText) {
+			*errorText = L"Cannot create temporary kernel file. Win32 error " +
+				std::to_wstring(GetLastError()) + L".";
+		}
+		return false;
+	}
 
-    bool ok = true;
-    const char* data = source.data();
-    size_t remaining = source.size();
+	bool ok = true;
+	const char* data = source.data();
+	size_t remaining = source.size();
 
-    while (remaining > 0) {
-        const DWORD chunk = static_cast<DWORD>(std::min<size_t>(remaining, 1024 * 1024));
-        DWORD written = 0;
-        if (!WriteFile(file, data, chunk, &written, nullptr) || written != chunk) {
-            ok = false;
-            break;
-        }
-        data += written;
-        remaining -= written;
-    }
+	while (remaining > 0) {
+		const DWORD chunk = static_cast<DWORD>(std::min<size_t>(remaining, 1024 * 1024));
+		DWORD written = 0;
+		if (!WriteFile(file, data, chunk, &written, nullptr) || written != chunk) {
+			ok = false;
+			break;
+		}
+		data += written;
+		remaining -= written;
+	}
 
-    if (ok && !FlushFileBuffers(file)) {
-        ok = false;
-    }
+	if (ok && !FlushFileBuffers(file)) {
+		ok = false;
+	}
 
-    DWORD writeError = ERROR_SUCCESS;
-    if (!ok) {
-        writeError = GetLastError();
-        if (writeError == ERROR_SUCCESS) {
-            writeError = ERROR_WRITE_FAULT;
-        }
-    }
-    CloseHandle(file);
+	DWORD writeError = ERROR_SUCCESS;
+	if (!ok) {
+		writeError = GetLastError();
+		if (writeError == ERROR_SUCCESS) {
+			writeError = ERROR_WRITE_FAULT;
+		}
+	}
+	CloseHandle(file);
 
-    if (!ok) {
-        DeleteFileW(temporaryPath.c_str());
-        if (errorText) {
-            *errorText = L"Cannot write kernel.glsl. Win32 error " +
-                std::to_wstring(writeError) + L".";
-        }
-        return false;
-    }
+	if (!ok) {
+		DeleteFileW(temporaryPath.c_str());
+		if (errorText) {
+			*errorText = L"Cannot write kernel.glsl. Win32 error " +
+				std::to_wstring(writeError) + L".";
+		}
+		return false;
+	}
 
-    if (!MoveFileExW(
-            temporaryPath.c_str(),
-            path.c_str(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        const DWORD moveError = GetLastError();
-        DeleteFileW(temporaryPath.c_str());
-        if (errorText) {
-            *errorText = L"Cannot replace kernel.glsl. Win32 error " +
-                std::to_wstring(moveError) + L".";
-        }
-        return false;
-    }
+	if (!MoveFileExW(
+			temporaryPath.c_str(),
+			path.c_str(),
+			MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+		const DWORD moveError = GetLastError();
+		DeleteFileW(temporaryPath.c_str());
+		if (errorText) {
+			*errorText = L"Cannot replace kernel.glsl. Win32 error " +
+				std::to_wstring(moveError) + L".";
+		}
+		return false;
+	}
 
-    return true;
+	return true;
 }
 
 void SafeRelease(IUnknown*& object)
 {
-    if (object) {
-        object->Release();
-        object = nullptr;
-    }
+	if (object) {
+		object->Release();
+		object = nullptr;
+	}
 }
 
 template <typename T>
 void SafeReleaseT(T*& object)
 {
-    if (object) {
-        object->Release();
-        object = nullptr;
-    }
+	if (object) {
+		object->Release();
+		object = nullptr;
+	}
 }
 
 std::wstring Utf8ToWide(const std::string& input)
 {
-    if (input.empty()) {
-        return {};
-    }
-    const int count = MultiByteToWideChar(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), nullptr, 0);
-    if (count <= 0) {
-        return {};
-    }
-    std::wstring output(static_cast<size_t>(count), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), &output[0], count);
-    return output;
+	if (input.empty()) {
+		return {};
+	}
+	const int count = MultiByteToWideChar(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), nullptr, 0);
+	if (count <= 0) {
+		return {};
+	}
+	std::wstring output(static_cast<size_t>(count), L'\0');
+	MultiByteToWideChar(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), &output[0], count);
+	return output;
 }
 
 std::string WideToUtf8(const std::wstring& input)
 {
-    if (input.empty()) {
-        return {};
-    }
-    const int count = WideCharToMultiByte(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), nullptr, 0, nullptr, nullptr);
-    if (count <= 0) {
-        return {};
-    }
-    std::string output(static_cast<size_t>(count), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), &output[0], count, nullptr, nullptr);
-    return output;
+	if (input.empty()) {
+		return {};
+	}
+	const int count = WideCharToMultiByte(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), nullptr, 0, nullptr, nullptr);
+	if (count <= 0) {
+		return {};
+	}
+	std::string output(static_cast<size_t>(count), '\0');
+	WideCharToMultiByte(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), &output[0], count, nullptr, nullptr);
+	return output;
 }
 
 std::wstring NormalizeNewlinesToLF(const std::wstring& input)
 {
-    std::wstring output;
-    output.reserve(input.size());
-    for (size_t i = 0; i < input.size(); ++i) {
-        const wchar_t ch = input[i];
-        if (ch == L'\r') {
-            output.push_back(L'\n');
-            if (i + 1 < input.size() && input[i + 1] == L'\n') {
-                ++i;
-            }
-        } else {
-            output.push_back(ch);
-        }
-    }
-    return output;
+	std::wstring output;
+	output.reserve(input.size());
+	for (size_t i = 0; i < input.size(); ++i) {
+		const wchar_t ch = input[i];
+		if (ch == L'\r') {
+			output.push_back(L'\n');
+			if (i + 1 < input.size() && input[i + 1] == L'\n') {
+				++i;
+			}
+		} else {
+			output.push_back(ch);
+		}
+	}
+	return output;
 }
 
 std::wstring NormalizeNewlinesToCRLF(const std::wstring& input)
 {
-    std::wstring output;
-    output.reserve(input.size() + input.size() / 16 + 2);
-    for (size_t i = 0; i < input.size(); ++i) {
-        const wchar_t ch = input[i];
-        if (ch == L'\r') {
-            output.push_back(L'\r');
-            if (i + 1 < input.size() && input[i + 1] == L'\n') {
-                output.push_back(L'\n');
-                ++i;
-            } else {
-                output.push_back(L'\n');
-            }
-        } else if (ch == L'\n') {
-            output.push_back(L'\r');
-            output.push_back(L'\n');
-        } else {
-            output.push_back(ch);
-        }
-    }
-    return output;
+	std::wstring output;
+	output.reserve(input.size() + input.size() / 16 + 2);
+	for (size_t i = 0; i < input.size(); ++i) {
+		const wchar_t ch = input[i];
+		if (ch == L'\r') {
+			output.push_back(L'\r');
+			if (i + 1 < input.size() && input[i + 1] == L'\n') {
+				output.push_back(L'\n');
+				++i;
+			} else {
+				output.push_back(L'\n');
+			}
+		} else if (ch == L'\n') {
+			output.push_back(L'\r');
+			output.push_back(L'\n');
+		} else {
+			output.push_back(ch);
+		}
+	}
+	return output;
 }
 
 UINT GetWindowDpiSafe(HWND hwnd)
 {
-    const UINT dpi = GetDpiForWindow(hwnd);
-    return dpi ? dpi : 96u;
+	const UINT dpi = GetDpiForWindow(hwnd);
+	return dpi ? dpi : 96u;
 }
 
 int ScaleForDpi(int value, UINT dpi)
 {
-    return MulDiv(value, static_cast<int>(dpi), 96);
+	return MulDiv(value, static_cast<int>(dpi), 96);
 }
 
 void centerWindow(HWND hwnd, HWND parent) {
-    RECT rcParent{};
-    if (parent) GetWindowRect(parent, &rcParent);
+	RECT rcParent{};
+	if (parent) GetWindowRect(parent, &rcParent);
 
-    RECT rect;
-    GetWindowRect(hwnd, &rect);
-    auto w = rect.right - rect.left, h = rect.bottom - rect.top;
-    if (parent) {
-        auto w2 = rcParent.right - rcParent.left, h2 = rcParent.bottom - rcParent.top;
-        rect.left = rcParent.left + w2 / 2 - w / 2;
-        rect.top = rcParent.top + h2 / 2 - h / 2;
-    }
-    else {
-        rect.left = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
-        rect.top = (GetSystemMetrics(SM_CYSCREEN) - h) / 2;
-    }
-    UINT flags = SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER;
-    flags |= (IsWindowVisible(hwnd) ? 0 : SWP_HIDEWINDOW);
-    SetWindowPos(hwnd, HWND_TOP, rect.left, rect.top, 1, 1, flags);
+	RECT rect;
+	GetWindowRect(hwnd, &rect);
+	auto w = rect.right - rect.left, h = rect.bottom - rect.top;
+	if (parent) {
+		auto w2 = rcParent.right - rcParent.left, h2 = rcParent.bottom - rcParent.top;
+		rect.left = rcParent.left + w2 / 2 - w / 2;
+		rect.top = rcParent.top + h2 / 2 - h / 2;
+	}
+	else {
+		rect.left = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
+		rect.top = (GetSystemMetrics(SM_CYSCREEN) - h) / 2;
+	}
+	UINT flags = SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER;
+	flags |= (IsWindowVisible(hwnd) ? 0 : SWP_HIDEWINDOW);
+	SetWindowPos(hwnd, HWND_TOP, rect.left, rect.top, 1, 1, flags);
 }
 
 HFONT CreateKernelDialogFont(UINT dpi)
 {
-    const int height = -MulDiv(9, static_cast<int>(dpi), 72);
-    return CreateFontW(
-        height, 0, 0, 0,
-        FW_NORMAL,
-        FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY,
-        DEFAULT_PITCH | FF_DONTCARE,
-        L"Consolas");
+	const int height = -MulDiv(9, static_cast<int>(dpi), 72);
+	return CreateFontW(
+		height, 0, 0, 0,
+		FW_NORMAL,
+		FALSE, FALSE, FALSE,
+		DEFAULT_CHARSET,
+		OUT_DEFAULT_PRECIS,
+		CLIP_DEFAULT_PRECIS,
+		CLEARTYPE_QUALITY,
+		DEFAULT_PITCH | FF_DONTCARE,
+		L"Consolas");
 }
 
 void ApplyKernelDialogFont(HWND hwnd)
 {
-    if (!hwnd) {
-        return;
-    }
+	if (!hwnd) {
+		return;
+	}
 
-    const HFONT newFont = CreateKernelDialogFont(GetWindowDpiSafe(hwnd));
-    if (!newFont) {
-        return;
-    }
+	const HFONT newFont = CreateKernelDialogFont(GetWindowDpiSafe(hwnd));
+	if (!newFont) {
+		return;
+	}
 
-    if (g_kernelDialogEdit) {
-        SendMessageW(g_kernelDialogEdit, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
-    }
-    if (g_kernelDialogApply) {
-        SendMessageW(g_kernelDialogApply, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
-    }
-    if (g_kernelDialogCancel) {
-        SendMessageW(g_kernelDialogCancel, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
-    }
-    if (g_kernelDialogReset) {
-        SendMessageW(g_kernelDialogReset, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
-    }
+	if (g_kernelDialogEdit) {
+		SendMessageW(g_kernelDialogEdit, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
+	}
+	if (g_kernelDialogApply) {
+		SendMessageW(g_kernelDialogApply, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
+	}
+	if (g_kernelDialogCancel) {
+		SendMessageW(g_kernelDialogCancel, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
+	}
+	if (g_kernelDialogReset) {
+		SendMessageW(g_kernelDialogReset, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
+	}
 
-    if (g_kernelDialogFont) {
-        DeleteObject(g_kernelDialogFont);
-    }
-    g_kernelDialogFont = newFont;
+	if (g_kernelDialogFont) {
+		DeleteObject(g_kernelDialogFont);
+	}
+	g_kernelDialogFont = newFont;
 }
 
 void LayoutKernelDialog(HWND hwnd)
 {
-    RECT client{};
-    GetClientRect(hwnd, &client);
+	RECT client{};
+	GetClientRect(hwnd, &client);
 
-    const UINT dpi = GetWindowDpiSafe(hwnd);
-    const int margin = ScaleForDpi(8, dpi);
-    const int gap = ScaleForDpi(8, dpi);
-    const int buttonWidth = ScaleForDpi(86, dpi);
-    const int buttonHeight = ScaleForDpi(28, dpi);
+	const UINT dpi = GetWindowDpiSafe(hwnd);
+	const int margin = ScaleForDpi(8, dpi);
+	const int gap = ScaleForDpi(8, dpi);
+	const int buttonWidth = ScaleForDpi(86, dpi);
+	const int buttonHeight = ScaleForDpi(28, dpi);
 
-    const int width = client.right - client.left;
-    const int height = client.bottom - client.top;
-    const int editHeight = std::max(1, height - margin * 3 - buttonHeight);
+	const int width = client.right - client.left;
+	const int height = client.bottom - client.top;
+	const int editHeight = std::max(1, height - margin * 3 - buttonHeight);
 
-    if (g_kernelDialogReset) {
-        SetWindowPos(g_kernelDialogReset, nullptr,
-            margin,
-            std::max(margin, height - margin - buttonHeight),
-            buttonWidth, buttonHeight,
-            SWP_NOZORDER);
-    }
+	if (g_kernelDialogReset) {
+		SetWindowPos(g_kernelDialogReset, nullptr,
+			margin,
+			std::max(margin, height - margin - buttonHeight),
+			buttonWidth, buttonHeight,
+			SWP_NOZORDER);
+	}
 
-    if (g_kernelDialogEdit) {
-        SetWindowPos(g_kernelDialogEdit, nullptr,
-            margin, margin,
-            std::max(1, width - margin * 2), editHeight,
-            SWP_NOZORDER);
-    }
+	if (g_kernelDialogEdit) {
+		SetWindowPos(g_kernelDialogEdit, nullptr,
+			margin, margin,
+			std::max(1, width - margin * 2), editHeight,
+			SWP_NOZORDER);
+	}
 
-    if (g_kernelDialogApply) {
-        SetWindowPos(g_kernelDialogApply, nullptr,
-            std::max(margin, width - margin - buttonWidth * 2 - gap),
-            std::max(margin, height - margin - buttonHeight),
-            buttonWidth, buttonHeight,
-            SWP_NOZORDER);
-    }
+	if (g_kernelDialogApply) {
+		SetWindowPos(g_kernelDialogApply, nullptr,
+			std::max(margin, width - margin - buttonWidth * 2 - gap),
+			std::max(margin, height - margin - buttonHeight),
+			buttonWidth, buttonHeight,
+			SWP_NOZORDER);
+	}
 
-    if (g_kernelDialogCancel) {
-        SetWindowPos(g_kernelDialogCancel, nullptr,
-            std::max(margin, width - margin - buttonWidth),
-            std::max(margin, height - margin - buttonHeight),
-            buttonWidth, buttonHeight,
-            SWP_NOZORDER);
-    }
+	if (g_kernelDialogCancel) {
+		SetWindowPos(g_kernelDialogCancel, nullptr,
+			std::max(margin, width - margin - buttonWidth),
+			std::max(margin, height - margin - buttonHeight),
+			buttonWidth, buttonHeight,
+			SWP_NOZORDER);
+	}
 }
 
 std::string LoadTextFile(const std::wstring& path)
 {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
-        return {};
-    }
-    std::ostringstream stream;
-    stream << file.rdbuf();
-    return stream.str();
+	std::ifstream file(path, std::ios::binary);
+	if (!file) {
+		return {};
+	}
+	std::ostringstream stream;
+	stream << file.rdbuf();
+	return stream.str();
 }
 
 bool ReplaceAll(std::string& value, const std::string& from, const std::string& to)
 {
-    if (from.empty()) {
-        return false;
-    }
-    bool changed = false;
-    size_t pos = 0;
-    while ((pos = value.find(from, pos)) != std::string::npos) {
-        value.replace(pos, from.size(), to);
-        pos += to.size();
-        changed = true;
-    }
-    return changed;
+	if (from.empty()) {
+		return false;
+	}
+	bool changed = false;
+	size_t pos = 0;
+	while ((pos = value.find(from, pos)) != std::string::npos) {
+		value.replace(pos, from.size(), to);
+		pos += to.size();
+		changed = true;
+	}
+	return changed;
 }
 
 std::string TranslateKernelGLSLToHLSL(std::string source)
 {
-    // Strip a few GLSL declarations that have no HLSL equivalent/meaning here.
-    ReplaceAll(source, "#version 100", "");
-    ReplaceAll(source, "precision highp float;", "");
-    ReplaceAll(source, "precision mediump float;", "");
-    ReplaceAll(source, "precision lowp float;", "");
+	// Strip a few GLSL declarations that have no HLSL equivalent/meaning here.
+	ReplaceAll(source, "#version 100", "");
+	ReplaceAll(source, "precision highp float;", "");
+	ReplaceAll(source, "precision mediump float;", "");
+	ReplaceAll(source, "precision lowp float;", "");
 
-    ReplaceAll(source, "vec2", "float2");
-    ReplaceAll(source, "vec3", "float3");
-    ReplaceAll(source, "vec4", "float4");
-    ReplaceAll(source, "mat2", "float2x2");
-    ReplaceAll(source, "mat3", "float3x3");
-    ReplaceAll(source, "mat4", "float4x4");
+	ReplaceAll(source, "vec2", "float2");
+	ReplaceAll(source, "vec3", "float3");
+	ReplaceAll(source, "vec4", "float4");
+	ReplaceAll(source, "mat2", "float2x2");
+	ReplaceAll(source, "mat3", "float3x3");
+	ReplaceAll(source, "mat4", "float4x4");
 
-    ReplaceAll(source, "atan(", "atan2(");
-    ReplaceAll(source, "mix(", "lerp(");
-    ReplaceAll(source, "fract(", "frac(");
-    ReplaceAll(source, "discard;", "discard;");
+	ReplaceAll(source, "atan(", "atan2(");
+	ReplaceAll(source, "mix(", "lerp(");
+	ReplaceAll(source, "fract(", "frac(");
+	ReplaceAll(source, "discard;", "discard;");
 
-    return source;
+	return source;
 }
 
 std::wstring GetExecutableDirectory()
 {
-    wchar_t buffer[MAX_PATH]{};
-    const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
-    if (length == 0 || length >= MAX_PATH) {
-        return L".";
-    }
-    std::wstring path(buffer, length);
-    const size_t slash = path.find_last_of(L"\\/");
-    if (slash == std::wstring::npos) {
-        return L".";
-    }
-    return path.substr(0, slash);
+	wchar_t buffer[MAX_PATH]{};
+	const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+	if (length == 0 || length >= MAX_PATH) {
+		return L".";
+	}
+	std::wstring path(buffer, length);
+	const size_t slash = path.find_last_of(L"\\/");
+	if (slash == std::wstring::npos) {
+		return L".";
+	}
+	return path.substr(0, slash);
 }
 
 
 std::string NormalizeNewlinesToLF(const std::string& input)
 {
-    std::string output;
-    output.reserve(input.size());
+	std::string output;
+	output.reserve(input.size());
 
-    for (size_t i = 0; i < input.size(); ++i) {
-        const char ch = input[i];
-        if (ch == '\r') {
-            output.push_back('\n');
-            if (i + 1 < input.size() && input[i + 1] == '\n') {
-                ++i;
-            }
-        } else {
-            output.push_back(ch);
-        }
-    }
+	for (size_t i = 0; i < input.size(); ++i) {
+		const char ch = input[i];
+		if (ch == '\r') {
+			output.push_back('\n');
+			if (i + 1 < input.size() && input[i + 1] == '\n') {
+				++i;
+			}
+		} else {
+			output.push_back(ch);
+		}
+	}
 
-    return output;
+	return output;
 }
 
 std::string GetDefaultKernelSource()
 {
-    return R"GLSL(float kernal(vec3 ver){
+	return R"GLSL(float kernal(vec3 ver){
    vec3 a;
    float b,c,d,e;
    a=ver;
    for(int i=0;i<5;i++){
-       b=length(a);
-       c=atan(a.y,a.x)*8.0;
-       e=1.0/b;
-       d=acos(a.z/b)*8.0;
-       b=pow(b,8.0);
-       a=vec3(b*sin(d)*cos(c),b*sin(d)*sin(c),b*cos(d))+ver;
-       if(b>6.0){
-           break;
-       }
+	   b=length(a);
+	   c=atan(a.y,a.x)*8.0;
+	   e=1.0/b;
+	   d=acos(a.z/b)*8.0;
+	   b=pow(b,8.0);
+	   a=vec3(b*sin(d)*cos(c),b*sin(d)*sin(c),b*cos(d))+ver;
+	   if(b>6.0){
+		   break;
+	   }
    }
    return 4.0-a.x*a.x-a.y*a.y-a.z*a.z;
 })GLSL";
@@ -1045,1821 +1084,1826 @@ std::string GetDefaultKernelSource()
 
 std::string GetKernelSource()
 {
-    const std::wstring path = GetExecutableDirectory() + L"\\kernel.glsl";
-    std::string loaded = LoadTextFile(path);
-    if (!loaded.empty()) {
-        return NormalizeNewlinesToLF(loaded);
-    }
+	const std::wstring path = GetExecutableDirectory() + L"\\kernel.glsl";
+	std::string loaded = LoadTextFile(path);
+	if (!loaded.empty()) {
+		return NormalizeNewlinesToLF(loaded);
+	}
 
-    return GetDefaultKernelSource();
+	return GetDefaultKernelSource();
 }
 
 std::string BuildPixelShaderSource(const std::string& kernelSource)
 {
-    std::string result = kPixelShaderPrefix;
-    result += TranslateKernelGLSLToHLSL(kernelSource);
-    result += "\n";
-    result += kPixelShaderSuffix;
-    return result;
+	std::string result = kPixelShaderPrefix;
+	result += TranslateKernelGLSLToHLSL(kernelSource);
+	result += "\n";
+	result += kPixelShaderSuffix;
+	return result;
 }
 
 void ShowCompileError(const wchar_t* title, ID3DBlob* errors)
 {
-    std::string text;
-    if (errors && errors->GetBufferPointer() && errors->GetBufferSize()) {
-        text.assign(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize());
-    } else {
-        text = "Unknown shader compilation error.";
-    }
-    const std::wstring wide = Utf8ToWide(text);
-    MessageBoxW(g_hwnd, wide.c_str(), title, MB_OK | MB_ICONERROR);
+	std::string text;
+	if (errors && errors->GetBufferPointer() && errors->GetBufferSize()) {
+		text.assign(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize());
+	} else {
+		text = "Unknown shader compilation error.";
+	}
+	const std::wstring wide = Utf8ToWide(text);
+	MessageBoxW(g_hwnd, wide.c_str(), title, MB_OK | MB_ICONERROR);
 }
 
 bool CompileVertexShader()
 {
-    ID3DBlob* shader = nullptr;
-    ID3DBlob* errors = nullptr;
-    const HRESULT hr = D3DCompile(
-        kVertexShader,
-        sizeof(kVertexShader) - 1,
-        "vertex.hlsl",
-        nullptr,
-        D3D_COMPILE_STANDARD_FILE_INCLUDE,
-        "main",
-        "vs_5_0",
-        D3DCOMPILE_ENABLE_STRICTNESS,
-        0,
-        &shader,
-        &errors);
+	ID3DBlob* shader = nullptr;
+	ID3DBlob* errors = nullptr;
+	const HRESULT hr = D3DCompile(
+		kVertexShader,
+		sizeof(kVertexShader) - 1,
+		"vertex.hlsl",
+		nullptr,
+		D3D_COMPILE_STANDARD_FILE_INCLUDE,
+		"main",
+		"vs_5_0",
+		D3DCOMPILE_ENABLE_STRICTNESS,
+		0,
+		&shader,
+		&errors);
 
-    if (FAILED(hr)) {
-        ShowCompileError(L"Vertex Shader Compilation Failed", errors);
-        SafeReleaseT(errors);
-        SafeReleaseT(shader);
-        return false;
-    }
+	if (FAILED(hr)) {
+		ShowCompileError(L"Vertex Shader Compilation Failed", errors);
+		SafeReleaseT(errors);
+		SafeReleaseT(shader);
+		return false;
+	}
 
-    HRESULT createHr = g_device->CreateVertexShader(
-        shader->GetBufferPointer(), shader->GetBufferSize(), nullptr, &g_vertexShader);
-    if (FAILED(createHr)) {
-        SafeReleaseT(errors);
-        SafeReleaseT(shader);
-        return false;
-    }
+	HRESULT createHr = g_device->CreateVertexShader(
+		shader->GetBufferPointer(), shader->GetBufferSize(), nullptr, &g_vertexShader);
+	if (FAILED(createHr)) {
+		SafeReleaseT(errors);
+		SafeReleaseT(shader);
+		return false;
+	}
 
-    SafeReleaseT(errors);
-    SafeReleaseT(shader);
+	SafeReleaseT(errors);
+	SafeReleaseT(shader);
 
-    return true;
+	return true;
 }
 
 bool CompileKernelShader(const std::string& kernelSource, bool showError)
 {
-    const std::string pixelSource = BuildPixelShaderSource(kernelSource);
-    ID3DBlob* shader = nullptr;
-    ID3DBlob* errors = nullptr;
+	const std::string pixelSource = BuildPixelShaderSource(kernelSource);
+	ID3DBlob* shader = nullptr;
+	ID3DBlob* errors = nullptr;
 
-    const HRESULT hr = D3DCompile(
-        pixelSource.data(),
-        pixelSource.size(),
-        "kernel.hlsl",
-        nullptr,
-        D3D_COMPILE_STANDARD_FILE_INCLUDE,
-        "main",
-        "ps_5_0",
-        D3DCOMPILE_ENABLE_STRICTNESS,
-        0,
-        &shader,
-        &errors);
+	const HRESULT hr = D3DCompile(
+		pixelSource.data(),
+		pixelSource.size(),
+		"kernel.hlsl",
+		nullptr,
+		D3D_COMPILE_STANDARD_FILE_INCLUDE,
+		"main",
+		"ps_5_0",
+		D3DCOMPILE_ENABLE_STRICTNESS,
+		0,
+		&shader,
+		&errors);
 
-    if (FAILED(hr)) {
-        if (showError) {
-            ShowCompileError(L"Pixel Shader Compilation Failed", errors);
-        }
-        SafeReleaseT(errors);
-        SafeReleaseT(shader);
-        return false;
-    }
+	if (FAILED(hr)) {
+		if (showError) {
+			ShowCompileError(L"Pixel Shader Compilation Failed", errors);
+		}
+		SafeReleaseT(errors);
+		SafeReleaseT(shader);
+		return false;
+	}
 
-    ID3D11PixelShader* newShader = nullptr;
-    const HRESULT createHr = g_device->CreatePixelShader(
-        shader->GetBufferPointer(), shader->GetBufferSize(), nullptr, &newShader);
+	ID3D11PixelShader* newShader = nullptr;
+	const HRESULT createHr = g_device->CreatePixelShader(
+		shader->GetBufferPointer(), shader->GetBufferSize(), nullptr, &newShader);
 
-    if (FAILED(createHr)) {
-        if (showError) {
-            MessageBoxW(g_hwnd, L"D3D11 could not create the compiled Pixel Shader.", L"Pixel Shader Error", MB_OK | MB_ICONERROR);
-        }
-        SafeReleaseT(errors);
-        SafeReleaseT(shader);
-        return false;
-    }
+	if (FAILED(createHr)) {
+		if (showError) {
+			MessageBoxW(g_hwnd, L"D3D11 could not create the compiled Pixel Shader.", L"Pixel Shader Error", MB_OK | MB_ICONERROR);
+		}
+		SafeReleaseT(errors);
+		SafeReleaseT(shader);
+		return false;
+	}
 
-    SafeReleaseT(errors);
-    SafeReleaseT(shader);
+	SafeReleaseT(errors);
+	SafeReleaseT(shader);
 
-    SafeReleaseT(g_pixelShader);
-    g_pixelShader = newShader;
-    g_kernel = kernelSource;
-    UpdateWindowTitle();
-    return true;
+	SafeReleaseT(g_pixelShader);
+	g_pixelShader = newShader;
+	g_kernel = kernelSource;
+	UpdateWindowTitle();
+	return true;
 }
 
 void ReleaseRenderTarget()
 {
-    SafeReleaseT(g_renderTarget);
+	SafeReleaseT(g_renderTarget);
 }
 
 bool CreateRenderTarget()
 {
-    ID3D11Texture2D* backBuffer = nullptr;
-    const HRESULT hr = g_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
-    if (FAILED(hr)) {
-        return false;
-    }
-    const HRESULT createHr = g_device->CreateRenderTargetView(backBuffer, nullptr, &g_renderTarget);
-    SafeReleaseT(backBuffer);
-    return SUCCEEDED(createHr);
+	ID3D11Texture2D* backBuffer = nullptr;
+	const HRESULT hr = g_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+	if (FAILED(hr)) {
+		return false;
+	}
+	const HRESULT createHr = g_device->CreateRenderTargetView(backBuffer, nullptr, &g_renderTarget);
+	SafeReleaseT(backBuffer);
+	return SUCCEEDED(createHr);
 }
 
 void UpdateRenderViewport()
 {
-    RECT client{};
-    GetClientRect(g_hwnd, &client);
+	RECT client{};
+	GetClientRect(g_hwnd, &client);
 
-    const UINT width = static_cast<UINT>(std::max<LONG>(1, client.right - client.left));
-    const UINT height = static_cast<UINT>(std::max<LONG>(1, client.bottom - client.top));
-    const UINT side = std::max<UINT>(1, std::min(width, height));
+	const UINT width = static_cast<UINT>(std::max<LONG>(1, client.right - client.left));
+	const UINT height = static_cast<UINT>(std::max<LONG>(1, client.bottom - client.top));
+	const UINT side = std::max<UINT>(1, std::min(width, height));
 
-    g_renderWidth = side;
-    g_renderHeight = side;
+	g_renderWidth = side;
+	g_renderHeight = side;
 
-    D3D11_VIEWPORT viewport{};
-    viewport.TopLeftX = 0.5f * static_cast<float>(width - side);
-    viewport.TopLeftY = 0.5f * static_cast<float>(height - side);
-    viewport.Width = static_cast<float>(side);
-    viewport.Height = static_cast<float>(side);
-    viewport.MinDepth = 0.0f;
-    viewport.MaxDepth = 1.0f;
-    g_context->RSSetViewports(1, &viewport);
+	D3D11_VIEWPORT viewport{};
+	viewport.TopLeftX = 0.5f * static_cast<float>(width - side);
+	viewport.TopLeftY = 0.5f * static_cast<float>(height - side);
+	viewport.Width = static_cast<float>(side);
+	viewport.Height = static_cast<float>(side);
+	viewport.MinDepth = 0.0f;
+	viewport.MaxDepth = 1.0f;
+	g_context->RSSetViewports(1, &viewport);
 }
 
 bool ResizeSwapChain(UINT width, UINT height)
 {
-    if (!g_swapChain || !g_context) {
-        return false;
-    }
+	if (!g_swapChain || !g_context) {
+		return false;
+	}
 
-    ReleaseRenderTarget();
-    g_context->OMSetRenderTargets(0, nullptr, nullptr);
+	ReleaseRenderTarget();
+	g_context->OMSetRenderTargets(0, nullptr, nullptr);
 
-    const HRESULT hr = g_swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
-    if (FAILED(hr)) {
-        return false;
-    }
+	const HRESULT hr = g_swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+	if (FAILED(hr)) {
+		return false;
+	}
 
-    if (!CreateRenderTarget()) {
-        return false;
-    }
+	if (!CreateRenderTarget()) {
+		return false;
+	}
 
-    UpdateRenderViewport();
-    return true;
+	UpdateRenderViewport();
+	return true;
 }
 
 bool InitD3D()
 {
-    RECT rect{};
-    GetClientRect(g_hwnd, &rect);
-    const UINT width = static_cast<UINT>(std::max<LONG>(1, rect.right - rect.left));
-    const UINT height = static_cast<UINT>(std::max<LONG>(1, rect.bottom - rect.top));
+	RECT rect{};
+	GetClientRect(g_hwnd, &rect);
+	const UINT width = static_cast<UINT>(std::max<LONG>(1, rect.right - rect.left));
+	const UINT height = static_cast<UINT>(std::max<LONG>(1, rect.bottom - rect.top));
 
-    const D3D_FEATURE_LEVEL requestedLevels[] = {
-        D3D_FEATURE_LEVEL_11_1,
-        D3D_FEATURE_LEVEL_11_0,
-    };
-    D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
+	const D3D_FEATURE_LEVEL requestedLevels[] = {
+		D3D_FEATURE_LEVEL_11_1,
+		D3D_FEATURE_LEVEL_11_0,
+	};
+	D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
 
-    UINT flags = 0;
+	UINT flags = 0;
 #if defined(_DEBUG)
-    flags |= D3D11_CREATE_DEVICE_DEBUG;
+	flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
-    DXGI_SWAP_CHAIN_DESC swapDesc{};
-    swapDesc.BufferDesc.Width = width;
-    swapDesc.BufferDesc.Height = height;
-    swapDesc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    swapDesc.BufferDesc.RefreshRate.Numerator = 60;
-    swapDesc.BufferDesc.RefreshRate.Denominator = 1;
-    swapDesc.SampleDesc.Count = 1;
-    swapDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapDesc.BufferCount = 1;
-    swapDesc.OutputWindow = g_hwnd;
-    swapDesc.Windowed = TRUE;
-    swapDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+	DXGI_SWAP_CHAIN_DESC swapDesc{};
+	swapDesc.BufferDesc.Width = width;
+	swapDesc.BufferDesc.Height = height;
+	swapDesc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	swapDesc.BufferDesc.RefreshRate.Numerator = 60;
+	swapDesc.BufferDesc.RefreshRate.Denominator = 1;
+	swapDesc.SampleDesc.Count = 1;
+	swapDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	swapDesc.BufferCount = 1;
+	swapDesc.OutputWindow = g_hwnd;
+	swapDesc.Windowed = TRUE;
+	swapDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-    HRESULT hr = D3D11CreateDeviceAndSwapChain(
-        nullptr,
-        D3D_DRIVER_TYPE_HARDWARE,
-        nullptr,
-        flags,
-        requestedLevels,
-        static_cast<UINT>(std::size(requestedLevels)),
-        D3D11_SDK_VERSION,
-        &swapDesc,
-        &g_swapChain,
-        &g_device,
-        &actualLevel,
-        &g_context);
+	HRESULT hr = D3D11CreateDeviceAndSwapChain(
+		nullptr,
+		D3D_DRIVER_TYPE_HARDWARE,
+		nullptr,
+		flags,
+		requestedLevels,
+		static_cast<UINT>(std::size(requestedLevels)),
+		D3D11_SDK_VERSION,
+		&swapDesc,
+		&g_swapChain,
+		&g_device,
+		&actualLevel,
+		&g_context);
 
-    if (hr == E_INVALIDARG) {
-        hr = D3D11CreateDeviceAndSwapChain(
-            nullptr,
-            D3D_DRIVER_TYPE_HARDWARE,
-            nullptr,
-            flags,
-            requestedLevels + 1,
-            1,
-            D3D11_SDK_VERSION,
-            &swapDesc,
-            &g_swapChain,
-            &g_device,
-            &actualLevel,
-            &g_context);
-    }
+	if (hr == E_INVALIDARG) {
+		hr = D3D11CreateDeviceAndSwapChain(
+			nullptr,
+			D3D_DRIVER_TYPE_HARDWARE,
+			nullptr,
+			flags,
+			requestedLevels + 1,
+			1,
+			D3D11_SDK_VERSION,
+			&swapDesc,
+			&g_swapChain,
+			&g_device,
+			&actualLevel,
+			&g_context);
+	}
 
-    if (FAILED(hr)) {
-        wchar_t text[256];
-        swprintf_s(text, L"D3D11CreateDeviceAndSwapChain failed: 0x%08X", static_cast<unsigned>(hr));
-        MessageBoxW(g_hwnd, text, L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
-        return false;
-    }
+	if (FAILED(hr)) {
+		wchar_t text[256];
+		swprintf_s(text, L"D3D11CreateDeviceAndSwapChain failed: 0x%08X", static_cast<unsigned>(hr));
+		MessageBoxW(g_hwnd, text, L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
+		return false;
+	}
 
-    if (!CreateRenderTarget()) {
-        MessageBoxW(g_hwnd, L"Failed to create the Direct3D 11 render target.", L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
-        return false;
-    }
+	if (!CreateRenderTarget()) {
+		MessageBoxW(g_hwnd, L"Failed to create the Direct3D 11 render target.", L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
+		return false;
+	}
 
-    D3D11_BUFFER_DESC cameraDesc{};
-    cameraDesc.ByteWidth = sizeof(CameraConstants);
-    cameraDesc.Usage = D3D11_USAGE_DYNAMIC;
-    cameraDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    cameraDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	D3D11_BUFFER_DESC cameraDesc{};
+	cameraDesc.ByteWidth = sizeof(CameraConstants);
+	cameraDesc.Usage = D3D11_USAGE_DYNAMIC;
+	cameraDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cameraDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-    hr = g_device->CreateBuffer(&cameraDesc, nullptr, &g_cameraBuffer);
-    if (FAILED(hr)) {
-        MessageBoxW(g_hwnd, L"Failed to create the camera constant buffer.", L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
-        return false;
-    }
+	hr = g_device->CreateBuffer(&cameraDesc, nullptr, &g_cameraBuffer);
+	if (FAILED(hr)) {
+		MessageBoxW(g_hwnd, L"Failed to create the camera constant buffer.", L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
+		return false;
+	}
 
-    D3D11_RASTERIZER_DESC rasterizerDesc{};
-    rasterizerDesc.FillMode = D3D11_FILL_SOLID;
-    rasterizerDesc.CullMode = D3D11_CULL_NONE;
-    rasterizerDesc.DepthClipEnable = TRUE;
-    hr = g_device->CreateRasterizerState(&rasterizerDesc, &g_rasterizerState);
-    if (FAILED(hr)) {
-        MessageBoxW(g_hwnd, L"Failed to create the Direct3D 11 rasterizer state.", L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
-        return false;
-    }
+	D3D11_RASTERIZER_DESC rasterizerDesc{};
+	rasterizerDesc.FillMode = D3D11_FILL_SOLID;
+	rasterizerDesc.CullMode = D3D11_CULL_NONE;
+	rasterizerDesc.DepthClipEnable = TRUE;
+	hr = g_device->CreateRasterizerState(&rasterizerDesc, &g_rasterizerState);
+	if (FAILED(hr)) {
+		MessageBoxW(g_hwnd, L"Failed to create the Direct3D 11 rasterizer state.", L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
+		return false;
+	}
 
-    if (!CompileVertexShader()) {
-        return false;
-    }
+	if (!CompileVertexShader()) {
+		return false;
+	}
 
-    g_defaultKernel = GetDefaultKernelSource();
-    g_kernel = GetKernelSource();
-    if (!CompileKernelShader(g_kernel, true)) {
-        return false;
-    }
+	g_defaultKernel = GetDefaultKernelSource();
+	g_kernel = GetKernelSource();
+	if (!CompileKernelShader(g_kernel, true)) {
+		return false;
+	}
 
-    UpdateRenderViewport();
-    return true;
+	UpdateRenderViewport();
+	return true;
 }
 
 void ShutdownD3D()
 {
-    if (g_context) {
-        g_context->ClearState();
-        g_context->Flush();
-    }
+	if (g_context) {
+		g_context->ClearState();
+		g_context->Flush();
+	}
 
-    SafeReleaseT(g_rasterizerState);
-    SafeReleaseT(g_cameraBuffer);
-    SafeReleaseT(g_pixelShader);
-    SafeReleaseT(g_vertexShader);
-    ReleaseRenderTarget();
-    SafeReleaseT(g_swapChain);
-    SafeReleaseT(g_context);
-    SafeReleaseT(g_device);
+	SafeReleaseT(g_rasterizerState);
+	SafeReleaseT(g_cameraBuffer);
+	SafeReleaseT(g_pixelShader);
+	SafeReleaseT(g_vertexShader);
+	ReleaseRenderTarget();
+	SafeReleaseT(g_swapChain);
+	SafeReleaseT(g_context);
+	SafeReleaseT(g_device);
 }
 
 void UpdateCameraBuffer()
 {
-    if (!g_context || !g_cameraBuffer) {
-        return;
-    }
+	if (!g_context || !g_cameraBuffer) {
+		return;
+	}
 
-    const float cx = static_cast<float>(g_renderWidth);
-    const float cy = static_cast<float>(g_renderHeight);
-    const float sum = std::max(1.0f, cx + cy);
+	const float cx = static_cast<float>(g_renderWidth);
+	const float cy = static_cast<float>(g_renderHeight);
+	const float sum = std::max(1.0f, cx + cy);
 
-    CameraConstants constants{};
-    const float cos1 = std::cos(g_ang1);
-    const float sin1 = std::sin(g_ang1);
-    const float cos2 = std::cos(g_ang2);
-    const float sin2 = std::sin(g_ang2);
+	CameraConstants constants{};
+	const float cos1 = std::cos(g_ang1);
+	const float sin1 = std::sin(g_ang1);
+	const float cos2 = std::cos(g_ang2);
+	const float sin2 = std::sin(g_ang2);
 
-    constants.x = cx * 2.0f / sum;
-    constants.y = cy * 2.0f / sum;
-    constants.len = g_len;
+	constants.x = cx * 2.0f / sum;
+	constants.y = cy * 2.0f / sum;
+	constants.len = g_len;
 
-    constants.origin[0] = g_len * cos1 * cos2 + g_cenx;
-    constants.origin[1] = g_len * sin2 + g_ceny;
-    constants.origin[2] = g_len * sin1 * cos2 + g_cenz;
+	constants.origin[0] = g_len * cos1 * cos2 + g_cenx;
+	constants.origin[1] = g_len * sin2 + g_ceny;
+	constants.origin[2] = g_len * sin1 * cos2 + g_cenz;
 
-    constants.right[0] = sin1;
-    constants.right[1] = 0.0f;
-    constants.right[2] = -cos1;
+	constants.right[0] = sin1;
+	constants.right[1] = 0.0f;
+	constants.right[2] = -cos1;
 
-    constants.up[0] = -sin2 * cos1;
-    constants.up[1] = cos2;
-    constants.up[2] = -sin2 * sin1;
+	constants.up[0] = -sin2 * cos1;
+	constants.up[1] = cos2;
+	constants.up[2] = -sin2 * sin1;
 
-    constants.forward[0] = -cos1 * cos2;
-    constants.forward[1] = -sin2;
-    constants.forward[2] = -sin1 * cos2;
+	constants.forward[0] = -cos1 * cos2;
+	constants.forward[1] = -sin2;
+	constants.forward[2] = -sin1 * cos2;
 
-    D3D11_MAPPED_SUBRESOURCE mapped{};
-    if (SUCCEEDED(g_context->Map(g_cameraBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
-        std::memcpy(mapped.pData, &constants, sizeof(constants));
-        g_context->Unmap(g_cameraBuffer, 0);
-    }
+	D3D11_MAPPED_SUBRESOURCE mapped{};
+	if (SUCCEEDED(g_context->Map(g_cameraBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+		std::memcpy(mapped.pData, &constants, sizeof(constants));
+		g_context->Unmap(g_cameraBuffer, 0);
+	}
 }
 
 void Render()
 {
-    if (!g_context || !g_renderTarget || !g_vertexShader || !g_pixelShader || !g_swapChain) {
-        return;
-    }
+	if (!g_context || !g_renderTarget || !g_vertexShader || !g_pixelShader || !g_swapChain) {
+		return;
+	}
 
-    UpdateRenderViewport();
-    UpdateCameraBuffer();
+	UpdateRenderViewport();
+	UpdateCameraBuffer();
 
-    const float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-    g_context->OMSetRenderTargets(1, &g_renderTarget, nullptr);
-    g_context->ClearRenderTargetView(g_renderTarget, clearColor);
+	const float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+	g_context->OMSetRenderTargets(1, &g_renderTarget, nullptr);
+	g_context->ClearRenderTargetView(g_renderTarget, clearColor);
 
-    // Fullscreen triangle generated from SV_VertexID; no VB/IA state required.
-    g_context->IASetInputLayout(nullptr);
-    g_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    g_context->RSSetState(g_rasterizerState);
-    g_context->VSSetShader(g_vertexShader, nullptr, 0);
-    g_context->PSSetShader(g_pixelShader, nullptr, 0);
-    g_context->VSSetConstantBuffers(0, 1, &g_cameraBuffer);
-    g_context->PSSetConstantBuffers(0, 1, &g_cameraBuffer);
-    g_context->Draw(3, 0);
+	// Fullscreen triangle generated from SV_VertexID; no VB/IA state required.
+	g_context->IASetInputLayout(nullptr);
+	g_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	g_context->RSSetState(g_rasterizerState);
+	g_context->VSSetShader(g_vertexShader, nullptr, 0);
+	g_context->PSSetShader(g_pixelShader, nullptr, 0);
+	g_context->VSSetConstantBuffers(0, 1, &g_cameraBuffer);
+	g_context->PSSetConstantBuffers(0, 1, &g_cameraBuffer);
+	g_context->Draw(3, 0);
 
-    const UINT syncInterval = g_vsyncEnabled ? 1u : 0u;
-    const HRESULT presentHr = g_swapChain->Present(syncInterval, 0);
-    if (presentHr == DXGI_STATUS_OCCLUDED) {
-        g_occluded = true;
-        return;
-    }
-    g_occluded = false;
+	const UINT syncInterval = g_vsyncEnabled ? 1u : 0u;
+	const HRESULT presentHr = g_swapChain->Present(syncInterval, 0);
+	if (presentHr == DXGI_STATUS_OCCLUDED) {
+		g_occluded = true;
+		return;
+	}
+	g_occluded = false;
 
-    if (SUCCEEDED(presentHr)) {
-        RecordPresentedFrame();
-    } else {
-        g_renderFailed = true;
-        HRESULT reason = g_device ? g_device->GetDeviceRemovedReason() : E_FAIL;
-        wchar_t text[256];
-        swprintf_s(text, L"Present failed: 0x%08X\nDevice removed reason: 0x%08X", static_cast<unsigned>(presentHr), static_cast<unsigned>(reason));
-        MessageBoxW(g_hwnd, text, L"Direct3D 11 Present Error", MB_OK | MB_ICONERROR);
-    }
+	if (SUCCEEDED(presentHr)) {
+		RecordPresentedFrame();
+	} else {
+		g_renderFailed = true;
+		HRESULT reason = g_device ? g_device->GetDeviceRemovedReason() : E_FAIL;
+		wchar_t text[256];
+		swprintf_s(text, L"Present failed: 0x%08X\nDevice removed reason: 0x%08X", static_cast<unsigned>(presentHr), static_cast<unsigned>(reason));
+		MessageBoxW(g_hwnd, text, L"Direct3D 11 Present Error", MB_OK | MB_ICONERROR);
+	}
 }
 
 void WaitForInput(DWORD timeoutMs)
 {
-    MsgWaitForMultipleObjects(0, nullptr, FALSE, timeoutMs, QS_ALLINPUT);
+	MsgWaitForMultipleObjects(0, nullptr, FALSE, timeoutMs, QS_ALLINPUT);
 }
 
 void PumpRenderFrame()
 {
-    if (g_renderFailed || g_paused) {
-        WaitForInput(INFINITE);
-        return;
-    }
+	if (g_renderFailed || g_paused) {
+		WaitForInput(INFINITE);
+		return;
+	}
 
-    if (g_occluded) {
-        WaitForInput(100);
-    }
+	if (g_occluded) {
+		WaitForInput(100);
+	}
 
-    LARGE_INTEGER now{};
-    QueryPerformanceCounter(&now);
+	LARGE_INTEGER now{};
+	QueryPerformanceCounter(&now);
 
-    if (g_frameRateLimit > 0 && !g_occluded) {
-        const double frameInterval = 1.0 / static_cast<double>(g_frameRateLimit);
-        const double elapsed = GetElapsedSeconds(g_lastFrameTime, now);
-        if (elapsed < frameInterval) {
-            const double remainingMs = (frameInterval - elapsed) * 1000.0;
-            // Sleep through the coarse wait, then spin on subsequent iterations
-            // for the final ~1.5 ms so scheduler granularity cannot cap FPS.
-            if (remainingMs > 1.5) {
-                Sleep(static_cast<DWORD>(remainingMs - 1.0));
-            }
-            return;
-        }
-    }
+	if (g_frameRateLimit > 0 && !g_occluded) {
+		const double frameInterval = 1.0 / static_cast<double>(g_frameRateLimit);
+		const double elapsed = GetElapsedSeconds(g_lastFrameTime, now);
+		if (elapsed < frameInterval) {
+			const double remainingMs = (frameInterval - elapsed) * 1000.0;
+			// Sleep through the coarse wait, then spin on subsequent iterations
+			// for the final ~1.5 ms so scheduler granularity cannot cap FPS.
+			if (remainingMs > 1.5) {
+				Sleep(static_cast<DWORD>(remainingMs - 1.0));
+			}
+			return;
+		}
+	}
 
-    const double deltaSeconds = std::min(0.05, GetElapsedSeconds(g_lastFrameTime, now));
-    g_lastFrameTime = now;
-    g_ang1 += static_cast<float>(deltaSeconds * kAutoRotationSpeed);
-    Render();
+	const double deltaSeconds = std::min(0.05, GetElapsedSeconds(g_lastFrameTime, now));
+	g_lastFrameTime = now;
+	g_ang1 += static_cast<float>(deltaSeconds * kAutoRotationSpeed);
+	Render();
 }
 
 
 void RemoveTrayIcon()
 {
-    if (!g_trayIconAdded) {
-        return;
-    }
+	if (!g_trayIconAdded) {
+		return;
+	}
 
-    Shell_NotifyIconW(NIM_DELETE, &g_trayIcon);
-    g_trayIconAdded = false;
-    std::memset(&g_trayIcon, 0, sizeof(g_trayIcon));
+	Shell_NotifyIconW(NIM_DELETE, &g_trayIcon);
+	g_trayIconAdded = false;
+	std::memset(&g_trayIcon, 0, sizeof(g_trayIcon));
 }
 
 bool AddTrayIcon()
 {
-    if (!g_hwnd || !g_hIconSmall) {
-        return false;
-    }
+	if (!g_hwnd || !g_hIconSmall) {
+		return false;
+	}
 
-    std::memset(&g_trayIcon, 0, sizeof(g_trayIcon));
-    g_trayIcon.cbSize = sizeof(g_trayIcon);
-    g_trayIcon.hWnd = g_hwnd;
-    g_trayIcon.uID = 1;
-    g_trayIcon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
-    g_trayIcon.uCallbackMessage = WMAPP_TRAYICON;
-    g_trayIcon.hIcon = g_hIconSmall;
-    wcscpy_s(g_trayIcon.szTip, L"vsbm for Windows");
+	std::memset(&g_trayIcon, 0, sizeof(g_trayIcon));
+	g_trayIcon.cbSize = sizeof(g_trayIcon);
+	g_trayIcon.hWnd = g_hwnd;
+	g_trayIcon.uID = 1;
+	g_trayIcon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+	g_trayIcon.uCallbackMessage = WMAPP_TRAYICON;
+	g_trayIcon.hIcon = g_hIconSmall;
+	wcscpy_s(g_trayIcon.szTip, L"vsbm for Windows");
 
-    if (!Shell_NotifyIconW(NIM_ADD, &g_trayIcon)) {
-        return false;
-    }
+	if (!Shell_NotifyIconW(NIM_ADD, &g_trayIcon)) {
+		return false;
+	}
 
-    // Keep the classic callback-message semantics so lParam is the mouse
-    // message (WM_LBUTTONUP, WM_RBUTTONUP, etc.) used below.
-    g_trayIconAdded = true;
-    return true;
+	// Keep the classic callback-message semantics so lParam is the mouse
+	// message (WM_LBUTTONUP, WM_RBUTTONUP, etc.) used below.
+	g_trayIconAdded = true;
+	return true;
 }
 
 void RestoreFromHideWhileWorking()
 {
-    if (!g_hiddenWhileWorking || !g_hwnd) {
-        return;
-    }
+	if (!g_hiddenWhileWorking || !g_hwnd) {
+		return;
+	}
 
-    LONG_PTR exStyle = g_exStyleBeforeHideWhileWorking;
-    exStyle &= ~(static_cast<LONG_PTR>(WS_EX_TRANSPARENT) |
-                 static_cast<LONG_PTR>(WS_EX_TOOLWINDOW));
-    exStyle |= WS_EX_APPWINDOW;
+	LONG_PTR exStyle = g_exStyleBeforeHideWhileWorking;
+	exStyle &= ~(static_cast<LONG_PTR>(WS_EX_TRANSPARENT) |
+				 static_cast<LONG_PTR>(WS_EX_TOOLWINDOW));
+	exStyle |= WS_EX_APPWINDOW;
 
-    SetWindowLongPtrW(g_hwnd, GWL_EXSTYLE, exStyle);
-    SetMainWindowAlpha(g_alpha);
+	SetWindowLongPtrW(g_hwnd, GWL_EXSTYLE, exStyle);
+	SetMainWindowAlpha(g_alpha);
 
-    SetWindowPos(
-        g_hwnd, nullptr,
-        0, 0, 0, 0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
-        SWP_NOZORDER | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
+	SetWindowPos(
+		g_hwnd, nullptr,
+		0, 0, 0, 0,
+		SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+		SWP_NOZORDER | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
 
-    g_hiddenWhileWorking = false;
-    ShowWindow(g_hwnd, SW_RESTORE);
-    SetForegroundWindow(g_hwnd);
+	g_hiddenWhileWorking = false;
+	ShowWindow(g_hwnd, SW_RESTORE);
+	SetForegroundWindow(g_hwnd);
 }
 
 void HideWhileWorking()
 {
-    if (!g_hwnd || g_hiddenWhileWorking) {
-        return;
-    }
+	if (!g_hwnd || g_hiddenWhileWorking) {
+		return;
+	}
 
-    if (g_hiddenToTaskbar) {
-        return;
-    }
+	if (g_hiddenToTaskbar) {
+		return;
+	}
 
-    g_exStyleBeforeHideWhileWorking = GetWindowLongPtrW(g_hwnd, GWL_EXSTYLE);
+	g_exStyleBeforeHideWhileWorking = GetWindowLongPtrW(g_hwnd, GWL_EXSTYLE);
 
-    LONG_PTR exStyle = g_exStyleBeforeHideWhileWorking;
-    exStyle |= WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
-    exStyle &= ~static_cast<LONG_PTR>(WS_EX_APPWINDOW);
+	LONG_PTR exStyle = g_exStyleBeforeHideWhileWorking;
+	exStyle |= WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+	exStyle &= ~static_cast<LONG_PTR>(WS_EX_APPWINDOW);
 
-    SetWindowLongPtrW(g_hwnd, GWL_EXSTYLE, exStyle);
-    SetWindowPos(
-        g_hwnd, nullptr,
-        0, 0, 0, 0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_FRAMECHANGED);
+	SetWindowLongPtrW(g_hwnd, GWL_EXSTYLE, exStyle);
+	SetWindowPos(
+		g_hwnd, nullptr,
+		0, 0, 0, 0,
+		SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_FRAMECHANGED);
 
-    SetLayeredWindowAttributes(g_hwnd, 0, 0, LWA_ALPHA);
-    g_hiddenWhileWorking = true;
+	SetLayeredWindowAttributes(g_hwnd, 0, 0, LWA_ALPHA);
+	g_hiddenWhileWorking = true;
 }
 
 void RestoreFromHideToTaskbar()
 {
-    if (!g_hiddenToTaskbar || !g_hwnd) {
-        return;
-    }
+	if (!g_hiddenToTaskbar || !g_hwnd) {
+		return;
+	}
 
-    // Keep it paused during the visual restore animation so no new frame is
-    // generated between the unhide/minimize/restore steps.
-    const bool savedPauseState = g_pauseStateBeforeHideToTaskbar;
-    g_paused = true;
-    ApplyPausedTitle();
+	// Keep it paused during the visual restore animation so no new frame is
+	// generated between the unhide/minimize/restore steps.
+	const bool savedPauseState = g_pauseStateBeforeHideToTaskbar;
+	g_paused = true;
+	ApplyPausedTitle();
 
-    // This intentionally mirrors the requested Windows animation sequence.
-    ShowWindow(g_hwnd, SW_MINIMIZE);
-    ShowWindow(g_hwnd, SW_RESTORE);
+	// This intentionally mirrors the requested Windows animation sequence.
+	ShowWindow(g_hwnd, SW_MINIMIZE);
+	ShowWindow(g_hwnd, SW_RESTORE);
 
-    g_hiddenToTaskbar = false;
-    SetPaused(savedPauseState);
-    SetMainWindowAlpha(g_alpha);
-    SetForegroundWindow(g_hwnd);
+	g_hiddenToTaskbar = false;
+	SetPaused(savedPauseState);
+	SetMainWindowAlpha(g_alpha);
+	SetForegroundWindow(g_hwnd);
 }
 
 void HideToTaskbar()
 {
-    if (!g_hwnd || g_hiddenToTaskbar) {
-        return;
-    }
+	if (!g_hwnd || g_hiddenToTaskbar) {
+		return;
+	}
 
-    if (g_hiddenWhileWorking) {
-        RestoreFromHideWhileWorking();
-    }
+	if (g_hiddenWhileWorking) {
+		RestoreFromHideWhileWorking();
+	}
 
-    g_pauseStateBeforeHideToTaskbar = g_paused;
-    SetPaused(true);
+	g_pauseStateBeforeHideToTaskbar = g_paused;
+	SetPaused(true);
 
-    // First minimize so Windows performs the normal taskbar animation,
-    // then hide the already-minimized window.
-    ShowWindow(g_hwnd, SW_MINIMIZE);
-    ShowWindow(g_hwnd, SW_HIDE);
-    g_hiddenToTaskbar = true;
+	// First minimize so Windows performs the normal taskbar animation,
+	// then hide the already-minimized window.
+	ShowWindow(g_hwnd, SW_MINIMIZE);
+	ShowWindow(g_hwnd, SW_HIDE);
+	g_hiddenToTaskbar = true;
 }
 
 void ShowTrayMenu()
 {
-    if (!g_hwnd) {
-        return;
-    }
+	if (!g_hwnd) {
+		return;
+	}
 
-    HMENU menu = CreatePopupMenu();
-    if (!menu) {
-        return;
-    }
+	HMENU menu = CreatePopupMenu();
+	if (!menu) {
+		return;
+	}
 
-    AppendMenuW(menu, MF_STRING, IDM_TRAY_SHOW, L"&Show");
-    AppendMenuW(menu, MF_STRING, IDM_TRAY_EXIT, L"&Exit");
+	AppendMenuW(menu, MF_STRING, IDM_TRAY_SHOW, L"&Show");
+	AppendMenuW(menu, MF_STRING, IDM_TRAY_EXIT, L"&Exit");
 
-    POINT point{};
-    GetCursorPos(&point);
+	POINT point{};
+	GetCursorPos(&point);
 
-    SetForegroundWindow(g_hwnd);
-    const UINT command = TrackPopupMenuEx(
-        menu,
-        TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
-        point.x,
-        point.y,
-        g_hwnd,
-        nullptr);
+	SetForegroundWindow(g_hwnd);
+	const UINT command = TrackPopupMenuEx(
+		menu,
+		TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
+		point.x,
+		point.y,
+		g_hwnd,
+		nullptr);
 
-    DestroyMenu(menu);
-    PostMessageW(g_hwnd, WM_NULL, 0, 0);
+	DestroyMenu(menu);
+	PostMessageW(g_hwnd, WM_NULL, 0, 0);
 
-    switch (command) {
-    case IDM_TRAY_SHOW:
-        if (g_hiddenWhileWorking) {
-            RestoreFromHideWhileWorking();
-        } else if (g_hiddenToTaskbar) {
-            RestoreFromHideToTaskbar();
-        } else {
-            ShowWindow(g_hwnd, SW_RESTORE);
-            SetForegroundWindow(g_hwnd);
-        }
-        break;
+	switch (command) {
+	case IDM_TRAY_SHOW:
+		if (g_hiddenWhileWorking) {
+			RestoreFromHideWhileWorking();
+		} else if (g_hiddenToTaskbar) {
+			RestoreFromHideToTaskbar();
+		} else {
+			ShowWindow(g_hwnd, SW_RESTORE);
+			SetForegroundWindow(g_hwnd);
+		}
+		break;
 
-    case IDM_TRAY_EXIT:
-        DestroyWindow(g_hwnd);
-        break;
+	case IDM_TRAY_EXIT:
+		DestroyWindow(g_hwnd);
+		break;
 
-    default:
-        break;
-    }
+	default:
+		break;
+	}
 }
 
 LRESULT CALLBACK KernelDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    switch (message) {
-    case WM_CREATE: {
-        const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lParam);
-        const HINSTANCE instance = create ? create->hInstance : GetModuleHandleW(nullptr);
-        const UINT dpi = GetWindowDpiSafe(hwnd);
-        const int margin = ScaleForDpi(8, dpi);
-        const int buttonWidth = ScaleForDpi(86, dpi);
-        const int buttonHeight = ScaleForDpi(28, dpi);
+	switch (message) {
+	case WM_CREATE: {
+		const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lParam);
+		const HINSTANCE instance = create ? create->hInstance : GetModuleHandleW(nullptr);
+		const UINT dpi = GetWindowDpiSafe(hwnd);
+		const int margin = ScaleForDpi(8, dpi);
+		const int buttonWidth = ScaleForDpi(86, dpi);
+		const int buttonHeight = ScaleForDpi(28, dpi);
 
-        g_kernelDialogEdit = CreateWindowExW(
-            WS_EX_CLIENTEDGE,
-            L"EDIT",
-            L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP |
-                ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
-                WS_VSCROLL | WS_HSCROLL | ES_WANTRETURN | ES_NOHIDESEL,
-            margin, margin, 680, 400,
-            hwnd,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_EDIT)),
-            instance,
-            nullptr);
+		g_kernelDialogEdit = CreateWindowExW(
+			WS_EX_CLIENTEDGE,
+			L"EDIT",
+			L"",
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+				ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
+				WS_VSCROLL | WS_HSCROLL | ES_WANTRETURN | ES_NOHIDESEL,
+			margin, margin, 680, 400,
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_EDIT)),
+			instance,
+			nullptr);
 
-        if (!g_kernelDialogEdit) {
-            return -1;
-        }
+		if (!g_kernelDialogEdit) {
+			return -1;
+		}
 
-        g_kernelDialogApply = CreateWindowExW(
-            0, L"BUTTON", L"&Apply",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-            0, 0, buttonWidth, buttonHeight,
-            hwnd,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_APPLY)),
-            instance,
-            nullptr);
+		g_kernelDialogApply = CreateWindowExW(
+			0, L"BUTTON", L"&Apply",
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+			0, 0, buttonWidth, buttonHeight,
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_APPLY)),
+			instance,
+			nullptr);
 
-        g_kernelDialogCancel = CreateWindowExW(
-            0, L"BUTTON", L"&Cancel",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-            0, 0, buttonWidth, buttonHeight,
-            hwnd,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_CANCEL)),
-            instance,
-            nullptr);
+		g_kernelDialogCancel = CreateWindowExW(
+			0, L"BUTTON", L"&Cancel",
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+			0, 0, buttonWidth, buttonHeight,
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_CANCEL)),
+			instance,
+			nullptr);
 
-        g_kernelDialogReset = CreateWindowExW(
-            0, L"BUTTON", L"&Reset",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-            0, 0, buttonWidth, buttonHeight,
-            hwnd,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_RESET)),
-            instance,
-            nullptr);
+		g_kernelDialogReset = CreateWindowExW(
+			0, L"BUTTON", L"&Reset",
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+			0, 0, buttonWidth, buttonHeight,
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_KERNEL_RESET)),
+			instance,
+			nullptr);
 
-        if (!g_kernelDialogApply || !g_kernelDialogCancel || !g_kernelDialogReset) {
-            return -1;
-        }
+		if (!g_kernelDialogApply || !g_kernelDialogCancel || !g_kernelDialogReset) {
+			return -1;
+		}
 
-        SendMessageW(g_kernelDialogEdit, EM_SETLIMITTEXT, static_cast<WPARAM>(1024 * 1024), 0);
+		SendMessageW(g_kernelDialogEdit, EM_SETLIMITTEXT, static_cast<WPARAM>(1024 * 1024), 0);
 
-        // Win32's multiline EDIT expects CRLF for line breaks. Keep LF as the
-        // program's canonical Kernel representation and convert only at the UI boundary.
-        const std::wstring initialText = NormalizeNewlinesToCRLF(Utf8ToWide(g_kernel));
-        SetWindowTextW(g_kernelDialogEdit, initialText.c_str());
+		// Win32's multiline EDIT expects CRLF for line breaks. Keep LF as the
+		// program's canonical Kernel representation and convert only at the UI boundary.
+		const std::wstring initialText = NormalizeNewlinesToCRLF(Utf8ToWide(g_kernel));
+		SetWindowTextW(g_kernelDialogEdit, initialText.c_str());
 
-        ApplyKernelDialogFont(hwnd);
-        LayoutKernelDialog(hwnd);
-        SetFocus(g_kernelDialogEdit);
-        return 0;
-    }
+		ApplyKernelDialogFont(hwnd);
+		LayoutKernelDialog(hwnd);
+		SetFocus(g_kernelDialogEdit);
+		return 0;
+	}
 
-    case WM_SIZE:
-        LayoutKernelDialog(hwnd);
-        return 0;
+	case WM_SIZE:
+		LayoutKernelDialog(hwnd);
+		return 0;
 
-    case WM_DPICHANGED: {
-        const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
-        if (suggested) {
-            SetWindowPos(hwnd, nullptr,
-                suggested->left,
-                suggested->top,
-                suggested->right - suggested->left,
-                suggested->bottom - suggested->top,
-                SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-        ApplyKernelDialogFont(hwnd);
-        LayoutKernelDialog(hwnd);
-        return 0;
-    }
+	case WM_DPICHANGED: {
+		const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
+		if (suggested) {
+			SetWindowPos(hwnd, nullptr,
+				suggested->left,
+				suggested->top,
+				suggested->right - suggested->left,
+				suggested->bottom - suggested->top,
+				SWP_NOZORDER | SWP_NOACTIVATE);
+		}
+		ApplyKernelDialogFont(hwnd);
+		LayoutKernelDialog(hwnd);
+		return 0;
+	}
 
-    case WM_GETMINMAXINFO: {
-        auto* minMax = reinterpret_cast<MINMAXINFO*>(lParam);
-        const UINT dpi = GetWindowDpiSafe(hwnd);
-        minMax->ptMinTrackSize.x = ScaleForDpi(560, dpi);
-        minMax->ptMinTrackSize.y = ScaleForDpi(360, dpi);
-        return 0;
-    }
+	case WM_GETMINMAXINFO: {
+		auto* minMax = reinterpret_cast<MINMAXINFO*>(lParam);
+		const UINT dpi = GetWindowDpiSafe(hwnd);
+		minMax->ptMinTrackSize.x = ScaleForDpi(560, dpi);
+		minMax->ptMinTrackSize.y = ScaleForDpi(360, dpi);
+		return 0;
+	}
 
-    case WM_SETFOCUS:
-        if (g_kernelDialogEdit) {
-            SetFocus(g_kernelDialogEdit);
-        }
-        return 0;
+	case WM_SETFOCUS:
+		if (g_kernelDialogEdit) {
+			SetFocus(g_kernelDialogEdit);
+		}
+		return 0;
 
-    case WM_COMMAND:
-        switch (LOWORD(wParam)) {
-        case IDC_KERNEL_APPLY: {
-            const int length = g_kernelDialogEdit ? GetWindowTextLengthW(g_kernelDialogEdit) : 0;
-            std::wstring text(static_cast<size_t>(std::max(0, length)) + 1, L'\0');
-            if (length > 0) {
-                GetWindowTextW(g_kernelDialogEdit, &text[0], length + 1);
-                text.resize(static_cast<size_t>(length));
-            } else {
-                text.clear();
-            }
+	case WM_COMMAND:
+		switch (LOWORD(wParam)) {
+		case IDC_KERNEL_APPLY: {
+			const int length = g_kernelDialogEdit ? GetWindowTextLengthW(g_kernelDialogEdit) : 0;
+			std::wstring text(static_cast<size_t>(std::max(0, length)) + 1, L'\0');
+			if (length > 0) {
+				GetWindowTextW(g_kernelDialogEdit, &text[0], length + 1);
+				text.resize(static_cast<size_t>(length));
+			} else {
+				text.clear();
+			}
 
-            text = NormalizeNewlinesToLF(text);
-            const std::string newKernel = WideToUtf8(text);
-            if (CompileKernelShader(newKernel, true)) {
-                std::wstring saveError;
-                if (!SaveKernelSourceToDisk(newKernel, &saveError)) {
-                    MessageBoxW(
-                        hwnd,
-                        (L"Kernel was compiled, but saving kernel.glsl failed.\r\n\r\n" + saveError).c_str(),
-                        L"Kernel Save Error",
-                        MB_OK | MB_ICONERROR);
-                    return 0;
-                }
-                DestroyWindow(hwnd);
-            }
-            return 0;
-        }
+			text = NormalizeNewlinesToLF(text);
+			const std::string newKernel = WideToUtf8(text);
+			if (CompileKernelShader(newKernel, true)) {
+				std::wstring saveError;
+				if (!SaveKernelSourceToDisk(newKernel, &saveError)) {
+					MessageBoxW(
+						hwnd,
+						(L"Kernel was compiled, but saving kernel.glsl failed.\r\n\r\n" + saveError).c_str(),
+						L"Kernel Save Error",
+						MB_OK | MB_ICONERROR);
+					return 0;
+				}
+				DestroyWindow(hwnd);
+			}
+			return 0;
+		}
 
-        case IDC_KERNEL_RESET: {
-            const std::string defaultKernel = GetDefaultKernelSource();
-            if (!CompileKernelShader(defaultKernel, true)) {
-                return 0;
-            }
+		case IDC_KERNEL_RESET: {
+			const std::string defaultKernel = GetDefaultKernelSource();
+			if (!CompileKernelShader(defaultKernel, true)) {
+				return 0;
+			}
 
-            const std::wstring resetText = NormalizeNewlinesToCRLF(Utf8ToWide(defaultKernel));
-            SetWindowTextW(g_kernelDialogEdit, resetText.c_str());
-            SetFocus(g_kernelDialogEdit);
+			const std::wstring resetText = NormalizeNewlinesToCRLF(Utf8ToWide(defaultKernel));
+			SetWindowTextW(g_kernelDialogEdit, resetText.c_str());
+			SetFocus(g_kernelDialogEdit);
 
-            const std::wstring kernelPath = GetExecutableDirectory() + L"\\kernel.glsl";
-            if (!DeleteFileW(kernelPath.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND) {
-                MessageBoxW(
-                    hwnd,
-                    L"The default Kernel was restored, but kernel.glsl could not be deleted.",
-                    L"Kernel Reset",
-                    MB_OK | MB_ICONWARNING);
-            }
-            return 0;
-        }
+			const std::wstring kernelPath = GetExecutableDirectory() + L"\\kernel.glsl";
+			if (!DeleteFileW(kernelPath.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND) {
+				MessageBoxW(
+					hwnd,
+					L"The default Kernel was restored, but kernel.glsl could not be deleted.",
+					L"Kernel Reset",
+					MB_OK | MB_ICONWARNING);
+			}
+			return 0;
+		}
 
-        case IDC_KERNEL_CANCEL:
-            DestroyWindow(hwnd);
-            return 0;
-        }
-        break;
+		case IDC_KERNEL_CANCEL:
+			DestroyWindow(hwnd);
+			return 0;
+		}
+		break;
 
-    case WM_CLOSE:
-        DestroyWindow(hwnd);
-        return 0;
+	case WM_CLOSE:
+		DestroyWindow(hwnd);
+		return 0;
 
-    case WM_DESTROY:
-        g_kernelDialogEdit = nullptr;
-        g_kernelDialogApply = nullptr;
-        g_kernelDialogCancel = nullptr;
-        g_kernelDialogReset = nullptr;
-        if (g_kernelDialogFont) {
-            DeleteObject(g_kernelDialogFont);
-            g_kernelDialogFont = nullptr;
-        }
-        g_kernelDialog = nullptr;
-        return 0;
-    }
+	case WM_DESTROY:
+		g_kernelDialogEdit = nullptr;
+		g_kernelDialogApply = nullptr;
+		g_kernelDialogCancel = nullptr;
+		g_kernelDialogReset = nullptr;
+		if (g_kernelDialogFont) {
+			DeleteObject(g_kernelDialogFont);
+			g_kernelDialogFont = nullptr;
+		}
+		g_kernelDialog = nullptr;
+		return 0;
+	}
 
-    return DefWindowProcW(hwnd, message, wParam, lParam);
+	return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
 bool RegisterKernelDialogClass(HINSTANCE instance)
 {
-    static bool registered = false;
-    if (registered) {
-        return true;
-    }
+	static bool registered = false;
+	if (registered) {
+		return true;
+	}
 
-    WNDCLASSEXW wc{};
-    wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = KernelDialogProc;
-    wc.hInstance = instance;
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
-    wc.hIcon = g_hIcon;
-    wc.hIconSm = g_hIconSmall;
-    wc.lpszClassName = kKernelWindowClass;
+	WNDCLASSEXW wc{};
+	wc.cbSize = sizeof(wc);
+	wc.style = CS_HREDRAW | CS_VREDRAW;
+	wc.lpfnWndProc = KernelDialogProc;
+	wc.hInstance = instance;
+	wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+	wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+	wc.hIcon = g_hIcon;
+	wc.hIconSm = g_hIconSmall;
+	wc.lpszClassName = kKernelWindowClass;
 
-    if (!RegisterClassExW(&wc)) {
-        if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-            return false;
-        }
-    }
+	if (!RegisterClassExW(&wc)) {
+		if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+			return false;
+		}
+	}
 
-    registered = true;
-    return true;
+	registered = true;
+	return true;
 }
 
 void OpenKernelDialog()
 {
-    if (g_kernelDialog) {
-        ShowWindow(g_kernelDialog, SW_SHOWNORMAL);
-        SetForegroundWindow(g_kernelDialog);
-        SetFocus(g_kernelDialogEdit);
-        return;
-    }
+	if (g_kernelDialog) {
+		ShowWindow(g_kernelDialog, SW_SHOWNORMAL);
+		SetForegroundWindow(g_kernelDialog);
+		SetFocus(g_kernelDialogEdit);
+		return;
+	}
 
-    const HINSTANCE instance = GetModuleHandleW(nullptr);
-    if (!RegisterKernelDialogClass(instance)) {
-        MessageBoxW(g_hwnd, L"Failed to register the Kernel editor window class.", L"Error", MB_OK | MB_ICONERROR);
-        return;
-    }
+	const HINSTANCE instance = GetModuleHandleW(nullptr);
+	if (!RegisterKernelDialogClass(instance)) {
+		MessageBoxW(g_hwnd, L"Failed to register the Kernel editor window class.", L"Error", MB_OK | MB_ICONERROR);
+		return;
+	}
 
-    RECT owner{};
-    GetWindowRect(g_hwnd, &owner);
+	RECT owner{};
+	GetWindowRect(g_hwnd, &owner);
 
-    const UINT dpi = GetWindowDpiSafe(g_hwnd);
-    const int width = ScaleForDpi(760, dpi);
-    const int height = ScaleForDpi(560, dpi);
+	const UINT dpi = GetWindowDpiSafe(g_hwnd);
+	const int width = ScaleForDpi(760, dpi);
+	const int height = ScaleForDpi(560, dpi);
 
-    g_kernelDialog = CreateWindowExW(
-        0,
-        kKernelWindowClass,
-        L"Kernel",
-        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-        0, 0, width, height,
-        g_hwnd,
-        nullptr,
-        instance,
-        nullptr);
+	g_kernelDialog = CreateWindowExW(
+		0,
+		kKernelWindowClass,
+		L"Kernel",
+		WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+		0, 0, width, height,
+		g_hwnd,
+		nullptr,
+		instance,
+		nullptr);
 
-    if (!g_kernelDialog) {
-        MessageBoxW(g_hwnd, L"Failed to create the Kernel editor window.", L"Error", MB_OK | MB_ICONERROR);
-        return;
-    }
+	if (!g_kernelDialog) {
+		MessageBoxW(g_hwnd, L"Failed to create the Kernel editor window.", L"Error", MB_OK | MB_ICONERROR);
+		return;
+	}
 
-    centerWindow(g_kernelDialog, g_hwnd);
-    ShowWindow(g_kernelDialog, SW_SHOWNORMAL);
-    UpdateWindow(g_kernelDialog);
-    SetForegroundWindow(g_kernelDialog);
-    SetFocus(g_kernelDialogEdit);
+	centerWindow(g_kernelDialog, g_hwnd);
+	ShowWindow(g_kernelDialog, SW_SHOWNORMAL);
+	UpdateWindow(g_kernelDialog);
+	SetForegroundWindow(g_kernelDialog);
+	SetFocus(g_kernelDialogEdit);
 }
 
 HFONT CreateSettingsDialogFont(UINT dpi)
 {
-    const int height = -MulDiv(9, static_cast<int>(dpi), 72);
-    return CreateFontW(
-        height, 0, 0, 0,
-        FW_NORMAL,
-        FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY,
-        DEFAULT_PITCH | FF_DONTCARE,
-        L"Segoe UI");
+	const int height = -MulDiv(9, static_cast<int>(dpi), 72);
+	return CreateFontW(
+		height, 0, 0, 0,
+		FW_NORMAL,
+		FALSE, FALSE, FALSE,
+		DEFAULT_CHARSET,
+		OUT_DEFAULT_PRECIS,
+		CLIP_DEFAULT_PRECIS,
+		CLEARTYPE_QUALITY,
+		DEFAULT_PITCH | FF_DONTCARE,
+		L"Segoe UI");
 }
 
 void ApplySettingsDialogFont(HWND hwnd)
 {
-    if (!hwnd) {
-        return;
-    }
+	if (!hwnd) {
+		return;
+	}
 
-    const HFONT newFont = CreateSettingsDialogFont(GetWindowDpiSafe(hwnd));
-    if (!newFont) {
-        return;
-    }
+	const HFONT newFont = CreateSettingsDialogFont(GetWindowDpiSafe(hwnd));
+	if (!newFont) {
+		return;
+	}
 
-    HWND controls[] = {
-        g_settingsFpsLabel,
-        g_settingsFpsEdit,
-        g_settingsVsyncCheck,
-        g_settingsOk,
-        g_settingsCancel,
-    };
-    for (HWND control : controls) {
-        if (control) {
-            SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
-        }
-    }
+	HWND controls[] = {
+		g_settingsFpsLabel,
+		g_settingsFpsEdit,
+		g_settingsVsyncCheck,
+		g_settingsOk,
+		g_settingsCancel,
+	};
+	for (HWND control : controls) {
+		if (control) {
+			SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(newFont), TRUE);
+		}
+	}
 
-    if (g_settingsDialogFont) {
-        DeleteObject(g_settingsDialogFont);
-    }
-    g_settingsDialogFont = newFont;
+	if (g_settingsDialogFont) {
+		DeleteObject(g_settingsDialogFont);
+	}
+	g_settingsDialogFont = newFont;
 }
 
 void LayoutSettingsDialog(HWND hwnd)
 {
-    RECT client{};
-    GetClientRect(hwnd, &client);
+	RECT client{};
+	GetClientRect(hwnd, &client);
 
-    const UINT dpi = GetWindowDpiSafe(hwnd);
-    const int margin = ScaleForDpi(12, dpi);
-    const int gap = ScaleForDpi(8, dpi);
-    const int rowHeight = ScaleForDpi(24, dpi);
-    const int buttonWidth = ScaleForDpi(86, dpi);
-    const int buttonHeight = ScaleForDpi(28, dpi);
+	const UINT dpi = GetWindowDpiSafe(hwnd);
+	const int margin = ScaleForDpi(12, dpi);
+	const int gap = ScaleForDpi(8, dpi);
+	const int rowHeight = ScaleForDpi(24, dpi);
+	const int buttonWidth = ScaleForDpi(86, dpi);
+	const int buttonHeight = ScaleForDpi(28, dpi);
 
-    const int width = client.right - client.left;
-    const int height = client.bottom - client.top;
+	const int width = client.right - client.left;
+	const int height = client.bottom - client.top;
 
-    if (g_settingsFpsLabel) {
-        SetWindowPos(g_settingsFpsLabel, nullptr,
-            margin, margin,
-            std::max(1, width - margin * 2), rowHeight,
-            SWP_NOZORDER);
-    }
-    if (g_settingsFpsEdit) {
-        SetWindowPos(g_settingsFpsEdit, nullptr,
-            margin, ScaleForDpi(42, dpi),
-            ScaleForDpi(140, dpi), rowHeight,
-            SWP_NOZORDER);
-    }
-    if (g_settingsVsyncCheck) {
-        SetWindowPos(g_settingsVsyncCheck, nullptr,
-            margin, ScaleForDpi(82, dpi),
-            std::max(1, width - margin * 2), rowHeight,
-            SWP_NOZORDER);
-    }
-    if (g_settingsOk) {
-        SetWindowPos(g_settingsOk, nullptr,
-            std::max(margin, width - margin - buttonWidth * 2 - gap),
-            std::max(margin, height - margin - buttonHeight),
-            buttonWidth, buttonHeight,
-            SWP_NOZORDER);
-    }
-    if (g_settingsCancel) {
-        SetWindowPos(g_settingsCancel, nullptr,
-            std::max(margin, width - margin - buttonWidth),
-            std::max(margin, height - margin - buttonHeight),
-            buttonWidth, buttonHeight,
-            SWP_NOZORDER);
-    }
+	if (g_settingsFpsLabel) {
+		SetWindowPos(g_settingsFpsLabel, nullptr,
+			margin, margin,
+			std::max(1, width - margin * 2), rowHeight,
+			SWP_NOZORDER);
+	}
+	if (g_settingsFpsEdit) {
+		SetWindowPos(g_settingsFpsEdit, nullptr,
+			margin, ScaleForDpi(42, dpi),
+			ScaleForDpi(140, dpi), rowHeight,
+			SWP_NOZORDER);
+	}
+	if (g_settingsVsyncCheck) {
+		SetWindowPos(g_settingsVsyncCheck, nullptr,
+			margin, ScaleForDpi(82, dpi),
+			std::max(1, width - margin * 2), rowHeight,
+			SWP_NOZORDER);
+	}
+	if (g_settingsOk) {
+		SetWindowPos(g_settingsOk, nullptr,
+			std::max(margin, width - margin - buttonWidth * 2 - gap),
+			std::max(margin, height - margin - buttonHeight),
+			buttonWidth, buttonHeight,
+			SWP_NOZORDER);
+	}
+	if (g_settingsCancel) {
+		SetWindowPos(g_settingsCancel, nullptr,
+			std::max(margin, width - margin - buttonWidth),
+			std::max(margin, height - margin - buttonHeight),
+			buttonWidth, buttonHeight,
+			SWP_NOZORDER);
+	}
 }
 
 LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    switch (message) {
-    case WM_CREATE: {
-        const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lParam);
-        const HINSTANCE instance = create ? create->hInstance : GetModuleHandleW(nullptr);
-        const UINT dpi = GetWindowDpiSafe(hwnd);
-        const int margin = ScaleForDpi(12, dpi);
-        const int rowHeight = ScaleForDpi(24, dpi);
-        const int buttonWidth = ScaleForDpi(86, dpi);
-        const int buttonHeight = ScaleForDpi(28, dpi);
+	switch (message) {
+	case WM_CREATE: {
+		const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lParam);
+		const HINSTANCE instance = create ? create->hInstance : GetModuleHandleW(nullptr);
+		const UINT dpi = GetWindowDpiSafe(hwnd);
+		const int margin = ScaleForDpi(12, dpi);
+		const int rowHeight = ScaleForDpi(24, dpi);
+		const int buttonWidth = ScaleForDpi(86, dpi);
+		const int buttonHeight = ScaleForDpi(28, dpi);
 
-        g_settingsFpsLabel = CreateWindowExW(
-            0, L"STATIC", L"Frame rate (0 = unlimited):",
-            WS_CHILD | WS_VISIBLE,
-            margin, margin, ScaleForDpi(260, dpi), rowHeight,
-            hwnd, nullptr, instance, nullptr);
+		g_settingsFpsLabel = CreateWindowExW(
+			0, L"STATIC", L"Frame rate (0 = unlimited):",
+			WS_CHILD | WS_VISIBLE,
+			margin, margin, ScaleForDpi(260, dpi), rowHeight,
+			hwnd, nullptr, instance, nullptr);
 
-        g_settingsFpsEdit = CreateWindowExW(
-            WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL,
-            0, 0, ScaleForDpi(140, dpi), rowHeight,
-            hwnd,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_FPS)),
-            instance,
-            nullptr);
+		g_settingsFpsEdit = CreateWindowExW(
+			WS_EX_CLIENTEDGE, L"EDIT", L"",
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL,
+			0, 0, ScaleForDpi(140, dpi), rowHeight,
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_FPS)),
+			instance,
+			nullptr);
 
-        g_settingsVsyncCheck = CreateWindowExW(
-            0, L"BUTTON", L"Enable &vertical sync",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            0, 0, ScaleForDpi(240, dpi), rowHeight,
-            hwnd,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_VSYNC)),
-            instance,
-            nullptr);
+		g_settingsVsyncCheck = CreateWindowExW(
+			0, L"BUTTON", L"Enable &vertical sync",
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+			0, 0, ScaleForDpi(240, dpi), rowHeight,
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_VSYNC)),
+			instance,
+			nullptr);
 
-        g_settingsOk = CreateWindowExW(
-            0, L"BUTTON", L"&OK",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-            0, 0, buttonWidth, buttonHeight,
-            hwnd,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_OK)),
-            instance,
-            nullptr);
+		g_settingsOk = CreateWindowExW(
+			0, L"BUTTON", L"&OK",
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+			0, 0, buttonWidth, buttonHeight,
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_OK)),
+			instance,
+			nullptr);
 
-        g_settingsCancel = CreateWindowExW(
-            0, L"BUTTON", L"&Cancel",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-            0, 0, buttonWidth, buttonHeight,
-            hwnd,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_CANCEL)),
-            instance,
-            nullptr);
+		g_settingsCancel = CreateWindowExW(
+			0, L"BUTTON", L"&Cancel",
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+			0, 0, buttonWidth, buttonHeight,
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_CANCEL)),
+			instance,
+			nullptr);
 
-        if (!g_settingsFpsLabel || !g_settingsFpsEdit || !g_settingsVsyncCheck ||
-            !g_settingsOk || !g_settingsCancel) {
-            return -1;
-        }
+		if (!g_settingsFpsLabel || !g_settingsFpsEdit || !g_settingsVsyncCheck ||
+			!g_settingsOk || !g_settingsCancel) {
+			return -1;
+		}
 
-        wchar_t buffer[16]{};
-        swprintf_s(buffer, L"%u", g_frameRateLimit);
-        SetWindowTextW(g_settingsFpsEdit, buffer);
-        Button_SetCheck(g_settingsVsyncCheck, g_vsyncEnabled ? BST_CHECKED : BST_UNCHECKED);
+		wchar_t buffer[16]{};
+		swprintf_s(buffer, L"%u", g_frameRateLimit);
+		SetWindowTextW(g_settingsFpsEdit, buffer);
+		Button_SetCheck(g_settingsVsyncCheck, g_vsyncEnabled ? BST_CHECKED : BST_UNCHECKED);
 
-        ApplySettingsDialogFont(hwnd);
-        LayoutSettingsDialog(hwnd);
-        SetFocus(g_settingsFpsEdit);
-        return 0;
-    }
+		ApplySettingsDialogFont(hwnd);
+		LayoutSettingsDialog(hwnd);
+		SetFocus(g_settingsFpsEdit);
+		return 0;
+	}
 
-    case WM_SIZE:
-        LayoutSettingsDialog(hwnd);
-        return 0;
+	case WM_SIZE:
+		LayoutSettingsDialog(hwnd);
+		return 0;
 
-    case WM_DPICHANGED: {
-        const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
-        if (suggested) {
-            SetWindowPos(hwnd, nullptr,
-                suggested->left,
-                suggested->top,
-                suggested->right - suggested->left,
-                suggested->bottom - suggested->top,
-                SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-        ApplySettingsDialogFont(hwnd);
-        LayoutSettingsDialog(hwnd);
-        return 0;
-    }
+	case WM_DPICHANGED: {
+		const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
+		if (suggested) {
+			SetWindowPos(hwnd, nullptr,
+				suggested->left,
+				suggested->top,
+				suggested->right - suggested->left,
+				suggested->bottom - suggested->top,
+				SWP_NOZORDER | SWP_NOACTIVATE);
+		}
+		ApplySettingsDialogFont(hwnd);
+		LayoutSettingsDialog(hwnd);
+		return 0;
+	}
 
-    case WM_COMMAND:
-        switch (LOWORD(wParam)) {
-        case IDC_SETTINGS_OK: {
-            wchar_t buffer[16]{};
-            GetWindowTextW(g_settingsFpsEdit, buffer, static_cast<int>(std::size(buffer)));
+	case WM_COMMAND:
+		switch (LOWORD(wParam)) {
+		case IDC_SETTINGS_OK: {
+			wchar_t buffer[16]{};
+			GetWindowTextW(g_settingsFpsEdit, buffer, static_cast<int>(std::size(buffer)));
 
-            wchar_t* end = nullptr;
-            const unsigned long parsed = wcstoul(buffer, &end, 10);
-            if (end == buffer || *end != L'\0' || parsed > kMaxFrameRateLimit) {
-                MessageBoxW(
-                    hwnd,
-                    L"Enter an integer between 0 and 1000000. 0 means unlimited.",
-                    L"Invalid Frame Rate",
-                    MB_OK | MB_ICONWARNING);
-                SetFocus(g_settingsFpsEdit);
-                return 0;
-            }
+			wchar_t* end = nullptr;
+			const unsigned long parsed = wcstoul(buffer, &end, 10);
+			if (end == buffer || *end != L'\0' || parsed > kMaxFrameRateLimit) {
+				MessageBoxW(
+					hwnd,
+					L"Enter an integer between 0 and 1000000. 0 means unlimited.",
+					L"Invalid Frame Rate",
+					MB_OK | MB_ICONWARNING);
+				SetFocus(g_settingsFpsEdit);
+				return 0;
+			}
 
-            g_frameRateLimit = static_cast<UINT>(parsed);
-            g_vsyncEnabled = Button_GetCheck(g_settingsVsyncCheck) == BST_CHECKED;
-            SaveWindowSettings();
-            DestroyWindow(hwnd);
-            return 0;
-        }
+			g_frameRateLimit = static_cast<UINT>(parsed);
+			g_vsyncEnabled = Button_GetCheck(g_settingsVsyncCheck) == BST_CHECKED;
+			SaveWindowSettings();
+			DestroyWindow(hwnd);
+			return 0;
+		}
 
-        case IDC_SETTINGS_CANCEL:
-            DestroyWindow(hwnd);
-            return 0;
-        }
-        break;
+		case IDC_SETTINGS_CANCEL:
+			DestroyWindow(hwnd);
+			return 0;
+		}
+		break;
 
-    case WM_CLOSE:
-        DestroyWindow(hwnd);
-        return 0;
+	case WM_CLOSE:
+		DestroyWindow(hwnd);
+		return 0;
 
-    case WM_DESTROY:
-        g_settingsFpsLabel = nullptr;
-        g_settingsFpsEdit = nullptr;
-        g_settingsVsyncCheck = nullptr;
-        g_settingsOk = nullptr;
-        g_settingsCancel = nullptr;
-        if (g_settingsDialogFont) {
-            DeleteObject(g_settingsDialogFont);
-            g_settingsDialogFont = nullptr;
-        }
-        g_settingsDialog = nullptr;
-        return 0;
-    }
+	case WM_DESTROY:
+		g_settingsFpsLabel = nullptr;
+		g_settingsFpsEdit = nullptr;
+		g_settingsVsyncCheck = nullptr;
+		g_settingsOk = nullptr;
+		g_settingsCancel = nullptr;
+		if (g_settingsDialogFont) {
+			DeleteObject(g_settingsDialogFont);
+			g_settingsDialogFont = nullptr;
+		}
+		g_settingsDialog = nullptr;
+		return 0;
+	}
 
-    return DefWindowProcW(hwnd, message, wParam, lParam);
+	return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
 bool RegisterSettingsDialogClass(HINSTANCE instance)
 {
-    static bool registered = false;
-    if (registered) {
-        return true;
-    }
+	static bool registered = false;
+	if (registered) {
+		return true;
+	}
 
-    WNDCLASSEXW wc{};
-    wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = SettingsDialogProc;
-    wc.hInstance = instance;
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
-    wc.hIcon = g_hIcon;
-    wc.hIconSm = g_hIconSmall;
-    wc.lpszClassName = kSettingsWindowClass;
+	WNDCLASSEXW wc{};
+	wc.cbSize = sizeof(wc);
+	wc.style = CS_HREDRAW | CS_VREDRAW;
+	wc.lpfnWndProc = SettingsDialogProc;
+	wc.hInstance = instance;
+	wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+	wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+	wc.hIcon = g_hIcon;
+	wc.hIconSm = g_hIconSmall;
+	wc.lpszClassName = kSettingsWindowClass;
 
-    if (!RegisterClassExW(&wc)) {
-        if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-            return false;
-        }
-    }
+	if (!RegisterClassExW(&wc)) {
+		if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+			return false;
+		}
+	}
 
-    registered = true;
-    return true;
+	registered = true;
+	return true;
 }
 
 void OpenSettingsDialog()
 {
-    if (g_settingsDialog) {
-        ShowWindow(g_settingsDialog, SW_SHOWNORMAL);
-        SetForegroundWindow(g_settingsDialog);
-        SetFocus(g_settingsFpsEdit);
-        return;
-    }
+	if (g_settingsDialog) {
+		ShowWindow(g_settingsDialog, SW_SHOWNORMAL);
+		SetForegroundWindow(g_settingsDialog);
+		SetFocus(g_settingsFpsEdit);
+		return;
+	}
 
-    const HINSTANCE instance = GetModuleHandleW(nullptr);
-    if (!RegisterSettingsDialogClass(instance)) {
-        MessageBoxW(g_hwnd, L"Failed to register the Settings window class.", L"Error", MB_OK | MB_ICONERROR);
-        return;
-    }
+	const HINSTANCE instance = GetModuleHandleW(nullptr);
+	if (!RegisterSettingsDialogClass(instance)) {
+		MessageBoxW(g_hwnd, L"Failed to register the Settings window class.", L"Error", MB_OK | MB_ICONERROR);
+		return;
+	}
 
-    const UINT dpi = GetWindowDpiSafe(g_hwnd);
-    const int width = ScaleForDpi(380, dpi);
-    const int height = ScaleForDpi(180, dpi);
+	const UINT dpi = GetWindowDpiSafe(g_hwnd);
+	const int width = ScaleForDpi(380, dpi);
+	const int height = ScaleForDpi(180, dpi);
 
-    g_settingsDialog = CreateWindowExW(
-        0,
-        kSettingsWindowClass,
-        L"Settings",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
-        0, 0, width, height,
-        g_hwnd,
-        nullptr,
-        instance,
-        nullptr);
+	g_settingsDialog = CreateWindowExW(
+		0,
+		kSettingsWindowClass,
+		L"Settings",
+		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
+		0, 0, width, height,
+		g_hwnd,
+		nullptr,
+		instance,
+		nullptr);
 
-    if (!g_settingsDialog) {
-        MessageBoxW(g_hwnd, L"Failed to create the Settings window.", L"Error", MB_OK | MB_ICONERROR);
-        return;
-    }
+	if (!g_settingsDialog) {
+		MessageBoxW(g_hwnd, L"Failed to create the Settings window.", L"Error", MB_OK | MB_ICONERROR);
+		return;
+	}
 
-    centerWindow(g_settingsDialog, g_hwnd);
-    ShowWindow(g_settingsDialog, SW_SHOWNORMAL);
-    UpdateWindow(g_settingsDialog);
-    SetForegroundWindow(g_settingsDialog);
-    SetFocus(g_settingsFpsEdit);
+	centerWindow(g_settingsDialog, g_hwnd);
+	ShowWindow(g_settingsDialog, SW_SHOWNORMAL);
+	UpdateWindow(g_settingsDialog);
+	SetForegroundWindow(g_settingsDialog);
+	SetFocus(g_settingsFpsEdit);
 }
 
 void ShowStatistics(HWND hwnd)
 {
-    const double activeSeconds = GetActiveSeconds();
-    const double averageFps = activeSeconds > 0.0
-        ? static_cast<double>(g_totalPresentedFrames) / activeSeconds
-        : 0.0;
+	const double activeSeconds = GetActiveSeconds();
+	const double averageFps = activeSeconds > 0.0
+		? static_cast<double>(g_totalPresentedFrames) / activeSeconds
+		: 0.0;
 
-    wchar_t text[256]{};
-    swprintf_s(
-        text,
-        L"Total frames rendered: %llu\r\nAverage frame rate: %.2f FPS\r\n",
-        static_cast<unsigned long long>(g_totalPresentedFrames),
-        averageFps);
+	const double historicalMax = std::max(g_maxFpsHistory, g_maxFps);
 
-    TaskDialog(hwnd, NULL, L"Statistics - vsbm for Windows",
-        L"Rendering statistics since application startup.",
-        text, TDCBF_CANCEL_BUTTON, TD_INFORMATION_ICON, NULL);
+	std::wstring text = std::format(
+		L"Total frames rendered: {}\r\n"
+		L"Average frame rate: {:.2f} FPS\r\n"
+		L"Session maximum frame rate: {:.2f} FPS\r\n"
+		L"Historical maximum frame rate: {:.2f} FPS\r\n",
+		static_cast<unsigned long long>(g_totalPresentedFrames),
+		averageFps,
+		g_maxFps,
+		historicalMax);
+
+	TaskDialog(hwnd, NULL, L"Statistics - vsbm for Windows",
+		L"Rendering statistics since application startup.",
+		text.c_str(), TDCBF_CANCEL_BUTTON, TD_INFORMATION_ICON, NULL);
 }
 
 void ReleasePreviewBitmap()
 {
-    if (g_previewBitmap) {
-        delete g_previewBitmap;
-        g_previewBitmap = nullptr;
-    }
-    if (g_previewStream) {
-        g_previewStream->Release();
-        g_previewStream = nullptr;
-    }
+	if (g_previewBitmap) {
+		delete g_previewBitmap;
+		g_previewBitmap = nullptr;
+	}
+	if (g_previewStream) {
+		g_previewStream->Release();
+		g_previewStream = nullptr;
+	}
 }
 
 bool LoadPreviewBitmap()
 {
-    ReleasePreviewBitmap();
+	ReleasePreviewBitmap();
 
-    const HMODULE module = GetModuleHandleW(nullptr);
-    const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(IDB_PNG1), L"PNG");
-    if (!resource) {
-        return false;
-    }
+	const HMODULE module = GetModuleHandleW(nullptr);
+	const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(IDB_PNG1), L"PNG");
+	if (!resource) {
+		return false;
+	}
 
-    const DWORD resourceSize = SizeofResource(module, resource);
-    const HGLOBAL loaded = LoadResource(module, resource);
-    if (!loaded || resourceSize == 0) {
-        return false;
-    }
+	const DWORD resourceSize = SizeofResource(module, resource);
+	const HGLOBAL loaded = LoadResource(module, resource);
+	if (!loaded || resourceSize == 0) {
+		return false;
+	}
 
-    const void* resourceData = LockResource(loaded);
-    if (!resourceData) {
-        return false;
-    }
+	const void* resourceData = LockResource(loaded);
+	if (!resourceData) {
+		return false;
+	}
 
-    IStream* stream = SHCreateMemStream(static_cast<const BYTE*>(resourceData), resourceSize);
-    if (!stream) {
-        return false;
-    }
+	IStream* stream = SHCreateMemStream(static_cast<const BYTE*>(resourceData), resourceSize);
+	if (!stream) {
+		return false;
+	}
 
-    Gdiplus::Bitmap* bitmap = Gdiplus::Bitmap::FromStream(stream, FALSE);
-    if (!bitmap || bitmap->GetLastStatus() != Gdiplus::Ok) {
-        delete bitmap;
-        stream->Release();
-        return false;
-    }
+	Gdiplus::Bitmap* bitmap = Gdiplus::Bitmap::FromStream(stream, FALSE);
+	if (!bitmap || bitmap->GetLastStatus() != Gdiplus::Ok) {
+		delete bitmap;
+		stream->Release();
+		return false;
+	}
 
-    g_previewStream = stream;
-    g_previewBitmap = bitmap;
-    return true;
+	g_previewStream = stream;
+	g_previewBitmap = bitmap;
+	return true;
 }
 
 LRESULT CALLBACK RenderPreviewProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    switch (message) {
-    case WM_DPICHANGED: {
-        const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
-        if (suggested) {
-            SetWindowPos(hwnd, nullptr,
-                suggested->left,
-                suggested->top,
-                suggested->right - suggested->left,
-                suggested->bottom - suggested->top,
-                SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-        return 0;
-    }
+	switch (message) {
+	case WM_DPICHANGED: {
+		const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
+		if (suggested) {
+			SetWindowPos(hwnd, nullptr,
+				suggested->left,
+				suggested->top,
+				suggested->right - suggested->left,
+				suggested->bottom - suggested->top,
+				SWP_NOZORDER | SWP_NOACTIVATE);
+		}
+		return 0;
+	}
 
-    case WM_SIZE:
-        InvalidateRect(hwnd, nullptr, FALSE);
-        return 0;
+	case WM_SIZE:
+		InvalidateRect(hwnd, nullptr, FALSE);
+		return 0;
 
-    case WM_ERASEBKGND:
-        return 1;
+	case WM_ERASEBKGND:
+		return 1;
 
-    case WM_PAINT: {
-        PAINTSTRUCT paint{};
-        HDC hdc = BeginPaint(hwnd, &paint);
+	case WM_PAINT: {
+		PAINTSTRUCT paint{};
+		HDC hdc = BeginPaint(hwnd, &paint);
 
-        RECT client{};
-        GetClientRect(hwnd, &client);
-        FillRect(hdc, &client, reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+		RECT client{};
+		GetClientRect(hwnd, &client);
+		FillRect(hdc, &client, reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
 
-        if (g_previewBitmap) {
-            const int clientWidth = client.right - client.left;
-            const int clientHeight = client.bottom - client.top;
-            const UINT imageWidth = g_previewBitmap->GetWidth();
-            const UINT imageHeight = g_previewBitmap->GetHeight();
-            if (imageWidth > 0 && imageHeight > 0) {
-                const double scale = std::min(
-                    static_cast<double>(clientWidth) / imageWidth,
-                    static_cast<double>(clientHeight) / imageHeight);
-                const int drawWidth = std::max(1, static_cast<int>(imageWidth * scale));
-                const int drawHeight = std::max(1, static_cast<int>(imageHeight * scale));
+		if (g_previewBitmap) {
+			const int clientWidth = client.right - client.left;
+			const int clientHeight = client.bottom - client.top;
+			const UINT imageWidth = g_previewBitmap->GetWidth();
+			const UINT imageHeight = g_previewBitmap->GetHeight();
+			if (imageWidth > 0 && imageHeight > 0) {
+				const double scale = std::min(
+					static_cast<double>(clientWidth) / imageWidth,
+					static_cast<double>(clientHeight) / imageHeight);
+				const int drawWidth = std::max(1, static_cast<int>(imageWidth * scale));
+				const int drawHeight = std::max(1, static_cast<int>(imageHeight * scale));
 
-                Gdiplus::Graphics graphics(hdc);
-                graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
-                graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
-                graphics.DrawImage(
-                    g_previewBitmap,
-                    (clientWidth - drawWidth) / 2,
-                    (clientHeight - drawHeight) / 2,
-                    drawWidth,
-                    drawHeight);
-            }
-        }
+				Gdiplus::Graphics graphics(hdc);
+				graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+				graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+				graphics.DrawImage(
+					g_previewBitmap,
+					(clientWidth - drawWidth) / 2,
+					(clientHeight - drawHeight) / 2,
+					drawWidth,
+					drawHeight);
+			}
+		}
 
-        EndPaint(hwnd, &paint);
-        return 0;
-    }
+		EndPaint(hwnd, &paint);
+		return 0;
+	}
 
-    case WM_CLOSE:
-        DestroyWindow(hwnd);
-        return 0;
+	case WM_CLOSE:
+		DestroyWindow(hwnd);
+		return 0;
 
-    case WM_DESTROY:
-        ReleasePreviewBitmap();
-        g_previewWindow = nullptr;
-        return 0;
-    }
+	case WM_DESTROY:
+		ReleasePreviewBitmap();
+		g_previewWindow = nullptr;
+		return 0;
+	}
 
-    return DefWindowProcW(hwnd, message, wParam, lParam);
+	return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
 bool RegisterRenderPreviewClass(HINSTANCE instance)
 {
-    static bool registered = false;
-    if (registered) {
-        return true;
-    }
+	static bool registered = false;
+	if (registered) {
+		return true;
+	}
 
-    WNDCLASSEXW wc{};
-    wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = RenderPreviewProc;
-    wc.hInstance = instance;
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.hIcon = g_hIcon;
-    wc.hIconSm = g_hIconSmall;
-    wc.lpszClassName = kPreviewWindowClass;
+	WNDCLASSEXW wc{};
+	wc.cbSize = sizeof(wc);
+	wc.style = CS_HREDRAW | CS_VREDRAW;
+	wc.lpfnWndProc = RenderPreviewProc;
+	wc.hInstance = instance;
+	wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+	wc.hIcon = g_hIcon;
+	wc.hIconSm = g_hIconSmall;
+	wc.lpszClassName = kPreviewWindowClass;
 
-    if (!RegisterClassExW(&wc)) {
-        if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-            return false;
-        }
-    }
+	if (!RegisterClassExW(&wc)) {
+		if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+			return false;
+		}
+	}
 
-    registered = true;
-    return true;
+	registered = true;
+	return true;
 }
 
 void OpenRenderPreview()
 {
-    if (g_previewWindow) {
-        ShowWindow(g_previewWindow, SW_SHOWNORMAL);
-        SetForegroundWindow(g_previewWindow);
-        return;
-    }
+	if (g_previewWindow) {
+		ShowWindow(g_previewWindow, SW_SHOWNORMAL);
+		SetForegroundWindow(g_previewWindow);
+		return;
+	}
 
-    if (!LoadPreviewBitmap()) {
-        MessageBoxW(g_hwnd, L"Failed to load the embedded preview image.", L"Render preview", MB_OK | MB_ICONERROR);
-        return;
-    }
+	if (!LoadPreviewBitmap()) {
+		MessageBoxW(g_hwnd, L"Failed to load the embedded preview image.", L"Render preview", MB_OK | MB_ICONERROR);
+		return;
+	}
 
-    const HINSTANCE instance = GetModuleHandleW(nullptr);
-    if (!RegisterRenderPreviewClass(instance)) {
-        ReleasePreviewBitmap();
-        MessageBoxW(g_hwnd, L"Failed to register the Render preview window class.", L"Error", MB_OK | MB_ICONERROR);
-        return;
-    }
+	const HINSTANCE instance = GetModuleHandleW(nullptr);
+	if (!RegisterRenderPreviewClass(instance)) {
+		ReleasePreviewBitmap();
+		MessageBoxW(g_hwnd, L"Failed to register the Render preview window class.", L"Error", MB_OK | MB_ICONERROR);
+		return;
+	}
 
-    int clientWidth = static_cast<int>(g_previewBitmap->GetWidth());
-    int clientHeight = static_cast<int>(g_previewBitmap->GetHeight());
+	int clientWidth = static_cast<int>(g_previewBitmap->GetWidth());
+	int clientHeight = static_cast<int>(g_previewBitmap->GetHeight());
 
-    // Cap the initial window to 80% of the monitor work area so a large bitmap still opens on screen.
-    const HMONITOR monitor = MonitorFromWindow(g_hwnd, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO monitorInfo{};
-    monitorInfo.cbSize = sizeof(monitorInfo);
-    if (monitor && GetMonitorInfoW(monitor, &monitorInfo)) {
-        const int maxWidth = (monitorInfo.rcWork.right - monitorInfo.rcWork.left) * 4 / 5;
-        const int maxHeight = (monitorInfo.rcWork.bottom - monitorInfo.rcWork.top) * 4 / 5;
-        if (clientWidth > maxWidth || clientHeight > maxHeight) {
-            const double scale = std::min(
-                static_cast<double>(maxWidth) / std::max(1, clientWidth),
-                static_cast<double>(maxHeight) / std::max(1, clientHeight));
-            clientWidth = static_cast<int>(clientWidth * scale);
-            clientHeight = static_cast<int>(clientHeight * scale);
-        }
-    }
+	// Cap the initial window to 80% of the monitor work area so a large bitmap still opens on screen.
+	const HMONITOR monitor = MonitorFromWindow(g_hwnd, MONITOR_DEFAULTTONEAREST);
+	MONITORINFO monitorInfo{};
+	monitorInfo.cbSize = sizeof(monitorInfo);
+	if (monitor && GetMonitorInfoW(monitor, &monitorInfo)) {
+		const int maxWidth = (monitorInfo.rcWork.right - monitorInfo.rcWork.left) * 4 / 5;
+		const int maxHeight = (monitorInfo.rcWork.bottom - monitorInfo.rcWork.top) * 4 / 5;
+		if (clientWidth > maxWidth || clientHeight > maxHeight) {
+			const double scale = std::min(
+				static_cast<double>(maxWidth) / std::max(1, clientWidth),
+				static_cast<double>(maxHeight) / std::max(1, clientHeight));
+			clientWidth = static_cast<int>(clientWidth * scale);
+			clientHeight = static_cast<int>(clientHeight * scale);
+		}
+	}
 
-    RECT windowRect{0, 0, clientWidth, clientHeight};
-    AdjustWindowRectEx(&windowRect, WS_OVERLAPPEDWINDOW, FALSE, 0);
+	RECT windowRect{0, 0, clientWidth, clientHeight};
+	AdjustWindowRectEx(&windowRect, WS_OVERLAPPEDWINDOW, FALSE, 0);
 
-    g_previewWindow = CreateWindowExW(
-        0,
-        kPreviewWindowClass,
-        L"Render preview",
-        WS_OVERLAPPEDWINDOW,
-        0, 0,
-        windowRect.right - windowRect.left,
-        windowRect.bottom - windowRect.top,
-        g_hwnd,
-        nullptr,
-        instance,
-        nullptr);
+	g_previewWindow = CreateWindowExW(
+		0,
+		kPreviewWindowClass,
+		L"Render preview",
+		WS_OVERLAPPEDWINDOW,
+		0, 0,
+		windowRect.right - windowRect.left,
+		windowRect.bottom - windowRect.top,
+		g_hwnd,
+		nullptr,
+		instance,
+		nullptr);
 
-    if (!g_previewWindow) {
-        ReleasePreviewBitmap();
-        MessageBoxW(g_hwnd, L"Failed to create the Render preview window.", L"Error", MB_OK | MB_ICONERROR);
-        return;
-    }
+	if (!g_previewWindow) {
+		ReleasePreviewBitmap();
+		MessageBoxW(g_hwnd, L"Failed to create the Render preview window.", L"Error", MB_OK | MB_ICONERROR);
+		return;
+	}
 
-    centerWindow(g_previewWindow, g_hwnd);
-    ShowWindow(g_previewWindow, SW_SHOWNORMAL);
-    UpdateWindow(g_previewWindow);
-    SetForegroundWindow(g_previewWindow);
+	centerWindow(g_previewWindow, g_hwnd);
+	ShowWindow(g_previewWindow, SW_SHOWNORMAL);
+	UpdateWindow(g_previewWindow);
+	SetForegroundWindow(g_previewWindow);
 }
 
 void AddKernelMenuItem(HWND hwnd)
 {
-    HMENU systemMenu = GetSystemMenu(hwnd, FALSE);
-    if (!systemMenu) {
-        return;
-    }
+	HMENU systemMenu = GetSystemMenu(hwnd, FALSE);
+	if (!systemMenu) {
+		return;
+	}
 
-    AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(systemMenu, MF_STRING, IDM_KERNEL, L"&Kernel...");
-    AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_TO_TASKBAR, L"Hide to taskbar");
-    AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_WHILE_WORKING, L"Hide while working");
-    AppendMenuW(systemMenu, MF_STRING, IDM_RENDER_PREVIEW, L"&Render preview");
-    AppendMenuW(systemMenu, MF_STRING, IDM_STATISTICS, L"Statistics");
-    AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(systemMenu, MF_STRING, IDM_SETTINGS, L"&Settings...");
-    AppendMenuW(systemMenu, MF_STRING, IDM_HELP, L"&Help...");
+	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
+	AppendMenuW(systemMenu, MF_STRING, IDM_KERNEL, L"&Kernel...");
+	AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_TO_TASKBAR, L"Hide to taskbar");
+	AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_WHILE_WORKING, L"Hide while working");
+	AppendMenuW(systemMenu, MF_STRING, IDM_RENDER_PREVIEW, L"&Render preview");
+	AppendMenuW(systemMenu, MF_STRING, IDM_STATISTICS, L"Statistics");
+	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
+	AppendMenuW(systemMenu, MF_STRING, IDM_SETTINGS, L"&Settings...");
+	AppendMenuW(systemMenu, MF_STRING, IDM_HELP, L"&Help...");
 }
 
 void UpdateMouseButtonsFromCapture()
 {
-    if (!g_leftDown && !g_rightDown) {
-        ReleaseCapture();
-    }
+	if (!g_leftDown && !g_rightDown) {
+		ReleaseCapture();
+	}
 }
 
 int FindTouchIndex(DWORD id)
 {
-    for (int i = 0; i < 2; ++i) {
-        if (g_touches[i].active && g_touches[i].id == id) {
-            return i;
-        }
-    }
-    return -1;
+	for (int i = 0; i < 2; ++i) {
+		if (g_touches[i].active && g_touches[i].id == id) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 int FindFreeTouchIndex()
 {
-    for (int i = 0; i < 2; ++i) {
-        if (!g_touches[i].active) {
-            return i;
-        }
-    }
-    return -1;
+	for (int i = 0; i < 2; ++i) {
+		if (!g_touches[i].active) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 int ActiveTouchCount() {
-    return static_cast<int>(g_touches[0].active) + static_cast<int>(g_touches[1].active);
+	return static_cast<int>(g_touches[0].active) + static_cast<int>(g_touches[1].active);
 }
 
 void GetTouchPair(std::array<TouchPoint, 2>& out, int& count)
 {
-    count = 0;
-    for (const TouchPoint& touch : g_touches) {
-        if (touch.active && count < 2) {
-            out[static_cast<size_t>(count++)] = touch;
-        }
-    }
+	count = 0;
+	for (const TouchPoint& touch : g_touches) {
+		if (touch.active && count < 2) {
+			out[static_cast<size_t>(count++)] = touch;
+		}
+	}
 }
 
 void HandleTouch(HWND hwnd, LPARAM lParam)
 {
-    const UINT count = LOWORD(lParam);
-    std::vector<TOUCHINPUT> inputs(count);
-    HTOUCHINPUT touchHandle = reinterpret_cast<HTOUCHINPUT>(lParam);
-    if (!GetTouchInputInfo(touchHandle, count, inputs.data(), sizeof(TOUCHINPUT))) {
-        return;
-    }
+	const UINT count = LOWORD(lParam);
+	std::vector<TOUCHINPUT> inputs(count);
+	HTOUCHINPUT touchHandle = reinterpret_cast<HTOUCHINPUT>(lParam);
+	if (!GetTouchInputInfo(touchHandle, count, inputs.data(), sizeof(TOUCHINPUT))) {
+		return;
+	}
 
-    std::array<TouchPoint, 2> oldTouches{};
-    int oldCount = 0;
-    GetTouchPair(oldTouches, oldCount);
+	std::array<TouchPoint, 2> oldTouches{};
+	int oldCount = 0;
+	GetTouchPair(oldTouches, oldCount);
 
-    bool moved = false;
+	bool moved = false;
 
-    for (const TOUCHINPUT& ti : inputs) {
-        POINT point{
-            static_cast<LONG>(ti.x / 100),
-            static_cast<LONG>(ti.y / 100)
-        };
-        ScreenToClient(hwnd, &point);
+	for (const TOUCHINPUT& ti : inputs) {
+		POINT point{
+			static_cast<LONG>(ti.x / 100),
+			static_cast<LONG>(ti.y / 100)
+		};
+		ScreenToClient(hwnd, &point);
 
-        if (ti.dwFlags & TOUCHEVENTF_DOWN) {
-            int index = FindTouchIndex(ti.dwID);
-            if (index < 0) {
-                index = FindFreeTouchIndex();
-            }
-            if (index >= 0) {
-                g_touches[index].active = true;
-                g_touches[index].id = ti.dwID;
-                g_touches[index].x = static_cast<float>(point.x);
-                g_touches[index].y = static_cast<float>(point.y);
-            }
-        }
+		if (ti.dwFlags & TOUCHEVENTF_DOWN) {
+			int index = FindTouchIndex(ti.dwID);
+			if (index < 0) {
+				index = FindFreeTouchIndex();
+			}
+			if (index >= 0) {
+				g_touches[index].active = true;
+				g_touches[index].id = ti.dwID;
+				g_touches[index].x = static_cast<float>(point.x);
+				g_touches[index].y = static_cast<float>(point.y);
+			}
+		}
 
-        if (ti.dwFlags & TOUCHEVENTF_MOVE) {
-            const int index = FindTouchIndex(ti.dwID);
-            if (index >= 0) {
-                if (std::fabs(g_touches[index].x - point.x) > 0.001f ||
-                    std::fabs(g_touches[index].y - point.y) > 0.001f) {
-                    moved = true;
-                }
-                g_touches[index].x = static_cast<float>(point.x);
-                g_touches[index].y = static_cast<float>(point.y);
-            }
-        }
-    }
+		if (ti.dwFlags & TOUCHEVENTF_MOVE) {
+			const int index = FindTouchIndex(ti.dwID);
+			if (index >= 0) {
+				if (std::fabs(g_touches[index].x - point.x) > 0.001f ||
+					std::fabs(g_touches[index].y - point.y) > 0.001f) {
+					moved = true;
+				}
+				g_touches[index].x = static_cast<float>(point.x);
+				g_touches[index].y = static_cast<float>(point.y);
+			}
+		}
+	}
 
-    const int newCountBeforeUp = ActiveTouchCount();
-    std::array<TouchPoint, 2> newTouches{};
-    int newCount = 0;
-    GetTouchPair(newTouches, newCount);
+	const int newCountBeforeUp = ActiveTouchCount();
+	std::array<TouchPoint, 2> newTouches{};
+	int newCount = 0;
+	GetTouchPair(newTouches, newCount);
 
-    if (oldCount == 1 && newCount == 1 && moved) {
-        const float dx = newTouches[0].x - oldTouches[0].x;
-        const float dy = newTouches[0].y - oldTouches[0].y;
-        g_ang1 += dx * 0.002f;
-        g_ang2 += dy * 0.002f;
-    } else if (oldCount == 2 && newCount == 2 && moved) {
-        const float oldSumX = oldTouches[0].x + oldTouches[1].x;
-        const float oldSumY = oldTouches[0].y + oldTouches[1].y;
-        const float newSumX = newTouches[0].x + newTouches[1].x;
-        const float newSumY = newTouches[0].y + newTouches[1].y;
-        const float deltaX = newSumX - oldSumX;
-        const float deltaY = newSumY - oldSumY;
+	if (oldCount == 1 && newCount == 1 && moved) {
+		const float dx = newTouches[0].x - oldTouches[0].x;
+		const float dy = newTouches[0].y - oldTouches[0].y;
+		g_ang1 += dx * 0.002f;
+		g_ang2 += dy * 0.002f;
+	} else if (oldCount == 2 && newCount == 2 && moved) {
+		const float oldSumX = oldTouches[0].x + oldTouches[1].x;
+		const float oldSumY = oldTouches[0].y + oldTouches[1].y;
+		const float newSumX = newTouches[0].x + newTouches[1].x;
+		const float newSumY = newTouches[0].y + newTouches[1].y;
+		const float deltaX = newSumX - oldSumX;
+		const float deltaY = newSumY - oldSumY;
 
-        const float cx = static_cast<float>(g_renderWidth);
-        const float cy = static_cast<float>(g_renderHeight);
-        const float l = g_len * 2.0f / std::max(1.0f, cx + cy);
+		const float cx = static_cast<float>(g_renderWidth);
+		const float cy = static_cast<float>(g_renderHeight);
+		const float l = g_len * 2.0f / std::max(1.0f, cx + cy);
 
-        g_cenx += l * (-deltaX * std::sin(g_ang1) - deltaY * std::sin(g_ang2) * std::cos(g_ang1));
-        g_ceny += l * ( deltaY * std::cos(g_ang2));
-        g_cenz += l * ( deltaX * std::cos(g_ang1) - deltaY * std::sin(g_ang2) * std::sin(g_ang1));
+		g_cenx += l * (-deltaX * std::sin(g_ang1) - deltaY * std::sin(g_ang2) * std::cos(g_ang1));
+		g_ceny += l * ( deltaY * std::cos(g_ang2));
+		g_cenz += l * ( deltaX * std::cos(g_ang1) - deltaY * std::sin(g_ang2) * std::sin(g_ang1));
 
-        const float oldDist = std::sqrt(
-            (oldTouches[0].x - oldTouches[1].x) * (oldTouches[0].x - oldTouches[1].x) +
-            (oldTouches[0].y - oldTouches[1].y) * (oldTouches[0].y - oldTouches[1].y) + 1.0f);
-        const float newDist = std::sqrt(
-            (newTouches[0].x - newTouches[1].x) * (newTouches[0].x - newTouches[1].x) +
-            (newTouches[0].y - newTouches[1].y) * (newTouches[0].y - newTouches[1].y) + 1.0f);
-        if (newDist > 0.001f) {
-            g_len *= oldDist / newDist;
-        }
-    }
+		const float oldDist = std::sqrt(
+			(oldTouches[0].x - oldTouches[1].x) * (oldTouches[0].x - oldTouches[1].x) +
+			(oldTouches[0].y - oldTouches[1].y) * (oldTouches[0].y - oldTouches[1].y) + 1.0f);
+		const float newDist = std::sqrt(
+			(newTouches[0].x - newTouches[1].x) * (newTouches[0].x - newTouches[1].x) +
+			(newTouches[0].y - newTouches[1].y) * (newTouches[0].y - newTouches[1].y) + 1.0f);
+		if (newDist > 0.001f) {
+			g_len *= oldDist / newDist;
+		}
+	}
 
-    for (const TOUCHINPUT& ti : inputs) {
-        if (ti.dwFlags & TOUCHEVENTF_UP) {
-            const int index = FindTouchIndex(ti.dwID);
-            if (index >= 0) {
-                g_touches[index] = {};
-            }
-        }
-    }
+	for (const TOUCHINPUT& ti : inputs) {
+		if (ti.dwFlags & TOUCHEVENTF_UP) {
+			const int index = FindTouchIndex(ti.dwID);
+			if (index >= 0) {
+				g_touches[index] = {};
+			}
+		}
+	}
 
-    (void)newCountBeforeUp;
-    CloseTouchInputHandle(touchHandle);
+	(void)newCountBeforeUp;
+	CloseTouchInputHandle(touchHandle);
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    if (g_taskbarCreatedMessage && message == g_taskbarCreatedMessage) {
-        AddTrayIcon();
-        return 0;
-    }
+	if (g_taskbarCreatedMessage && message == g_taskbarCreatedMessage) {
+		AddTrayIcon();
+		return 0;
+	}
 
-    switch (message) {
-    case WM_CREATE:
-        RegisterTouchWindow(hwnd, 0);
-        SetLayeredWindowAttributes(hwnd, 0, g_alpha, LWA_ALPHA);
-        return 0;
+	switch (message) {
+	case WM_CREATE:
+		RegisterTouchWindow(hwnd, 0);
+		SetLayeredWindowAttributes(hwnd, 0, g_alpha, LWA_ALPHA);
+		return 0;
 
-    case WM_DPICHANGED:
-        if (!IsZoomed(hwnd) && !IsIconic(hwnd)) {
-            const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
-            if (suggested) {
-                SetWindowPos(hwnd, nullptr,
-                    suggested->left,
-                    suggested->top,
-                    suggested->right - suggested->left,
-                    suggested->bottom - suggested->top,
-                    SWP_NOZORDER | SWP_NOACTIVATE);
-            }
-        }
-        SaveWindowSettings();
-        return 0;
+	case WM_DPICHANGED:
+		if (!IsZoomed(hwnd) && !IsIconic(hwnd)) {
+			const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
+			if (suggested) {
+				SetWindowPos(hwnd, nullptr,
+					suggested->left,
+					suggested->top,
+					suggested->right - suggested->left,
+					suggested->bottom - suggested->top,
+					SWP_NOZORDER | SWP_NOACTIVATE);
+			}
+		}
+		SaveWindowSettings();
+		return 0;
 
-    case WM_SIZE:
-        if (g_device && wParam != SIZE_MINIMIZED) {
-            const UINT width = static_cast<UINT>(std::max<LONG>(1, LOWORD(lParam)));
-            const UINT height = static_cast<UINT>(std::max<LONG>(1, HIWORD(lParam)));
-            if (ResizeSwapChain(width, height)) {
-                Render();
-            }
-        }
-        return 0;
+	case WM_SIZE:
+		if (g_device && wParam != SIZE_MINIMIZED) {
+			const UINT width = static_cast<UINT>(std::max<LONG>(1, LOWORD(lParam)));
+			const UINT height = static_cast<UINT>(std::max<LONG>(1, HIWORD(lParam)));
+			if (ResizeSwapChain(width, height)) {
+				Render();
+			}
+		}
+		return 0;
 
-    case WM_SYSCOMMAND: {
-        const UINT_PTR command = static_cast<UINT_PTR>(wParam);
-        if (command == IDM_KERNEL) {
-            OpenKernelDialog();
-            return 0;
-        }
-        if (command == IDM_HIDE_TO_TASKBAR) {
-            HideToTaskbar();
-            return 0;
-        }
-        if (command == IDM_HIDE_WHILE_WORKING) {
-            HideWhileWorking();
-            return 0;
-        }
-        if (command == IDM_RENDER_PREVIEW) {
-            OpenRenderPreview();
-            return 0;
-        }
-        if (command == IDM_STATISTICS) {
-            ShowStatistics(hwnd);
-            return 0;
-        }
-        if (command == IDM_SETTINGS) {
-            OpenSettingsDialog();
-            return 0;
-        }
-        if (command == IDM_HELP) {
-            TaskDialog(hwnd, NULL, L"Help - vsbm for Windows", L"Here is the help document.", (
-                L"Press Space to pause/resume animation.\r\n"
-                L"Press left button and move to rotate.\r\n"
-                L"Press right button to move the view.\r\n"
-                L"Scroll the wheel to zoom.\r\n"
-                L"Press Up to decrease opacity, or Down to increase it.\r\n"
-                L"Use the system menu to edit the Kernel, open Settings, view statistics, or hide the window.\r\n"
-                L"The notification-area icon can restore the window or exit the application.\r\n"
-                L"\r\nThanks for using this application!\r\n" + std::wstring(g_kProductUrl)).c_str(),
-                TDCBF_CANCEL_BUTTON, TD_INFORMATION_ICON, NULL);
-            return 0;
-        }
-        break;
-    }
+	case WM_SYSCOMMAND: {
+		const UINT_PTR command = static_cast<UINT_PTR>(wParam);
+		if (command == IDM_KERNEL) {
+			OpenKernelDialog();
+			return 0;
+		}
+		if (command == IDM_HIDE_TO_TASKBAR) {
+			HideToTaskbar();
+			return 0;
+		}
+		if (command == IDM_HIDE_WHILE_WORKING) {
+			HideWhileWorking();
+			return 0;
+		}
+		if (command == IDM_RENDER_PREVIEW) {
+			OpenRenderPreview();
+			return 0;
+		}
+		if (command == IDM_STATISTICS) {
+			ShowStatistics(hwnd);
+			return 0;
+		}
+		if (command == IDM_SETTINGS) {
+			OpenSettingsDialog();
+			return 0;
+		}
+		if (command == IDM_HELP) {
+			TaskDialog(hwnd, NULL, L"Help - vsbm for Windows", L"Here is the help document.", (
+				L"Press Space to pause/resume animation.\r\n"
+				L"Press left button and move to rotate.\r\n"
+				L"Press right button to move the view.\r\n"
+				L"Scroll the wheel to zoom.\r\n"
+				L"Press Up to decrease opacity, or Down to increase it.\r\n"
+				L"Use the system menu to edit the Kernel, open Settings, view statistics, or hide the window.\r\n"
+				L"The notification-area icon can restore the window or exit the application.\r\n"
+				L"\r\nThanks for using this application!\r\n" + std::wstring(g_kProductUrl)).c_str(),
+				TDCBF_CANCEL_BUTTON, TD_INFORMATION_ICON, NULL);
+			return 0;
+		}
+		break;
+	}
 
-    case WMAPP_TRAYICON:
-        if (lParam == WM_LBUTTONUP || lParam == WM_LBUTTONDBLCLK) {
-            if (g_hiddenWhileWorking) {
-                RestoreFromHideWhileWorking();
-            } else if (g_hiddenToTaskbar) {
-                RestoreFromHideToTaskbar();
-            } else {
-                ShowWindow(hwnd, SW_RESTORE);
-                SetForegroundWindow(hwnd);
-            }
-            return 0;
-        }
-        if (lParam == WM_RBUTTONUP) {
-            ShowTrayMenu();
-            return 0;
-        }
-        break;
+	case WMAPP_TRAYICON:
+		if (lParam == WM_LBUTTONUP || lParam == WM_LBUTTONDBLCLK) {
+			if (g_hiddenWhileWorking) {
+				RestoreFromHideWhileWorking();
+			} else if (g_hiddenToTaskbar) {
+				RestoreFromHideToTaskbar();
+			} else {
+				ShowWindow(hwnd, SW_RESTORE);
+				SetForegroundWindow(hwnd);
+			}
+			return 0;
+		}
+		if (lParam == WM_RBUTTONUP) {
+			ShowTrayMenu();
+			return 0;
+		}
+		break;
 
-    case WM_LBUTTONDOWN:
-        g_leftDown = true;
-        g_mouseMoved = false;
-        g_mouseX = GET_X_LPARAM(lParam);
-        g_mouseY = GET_Y_LPARAM(lParam);
-        SetCapture(hwnd);
-        return 0;
+	case WM_LBUTTONDOWN:
+		g_leftDown = true;
+		g_mouseMoved = false;
+		g_mouseX = GET_X_LPARAM(lParam);
+		g_mouseY = GET_Y_LPARAM(lParam);
+		SetCapture(hwnd);
+		return 0;
 
-    case WM_LBUTTONUP:
-        g_leftDown = false;
-        UpdateMouseButtonsFromCapture();
-        return 0;
+	case WM_LBUTTONUP:
+		g_leftDown = false;
+		UpdateMouseButtonsFromCapture();
+		return 0;
 
-    case WM_RBUTTONDOWN:
-        g_rightDown = true;
-        g_mouseMoved = false;
-        g_mouseX = GET_X_LPARAM(lParam);
-        g_mouseY = GET_Y_LPARAM(lParam);
-        SetCapture(hwnd);
-        return 0;
+	case WM_RBUTTONDOWN:
+		g_rightDown = true;
+		g_mouseMoved = false;
+		g_mouseX = GET_X_LPARAM(lParam);
+		g_mouseY = GET_Y_LPARAM(lParam);
+		SetCapture(hwnd);
+		return 0;
 
-    case WM_RBUTTONUP:
-        g_rightDown = false;
-        UpdateMouseButtonsFromCapture();
-        return 0;
+	case WM_RBUTTONUP:
+		g_rightDown = false;
+		UpdateMouseButtonsFromCapture();
+		return 0;
 
-    case WM_MOUSEMOVE: {
-        const int x = GET_X_LPARAM(lParam);
-        const int y = GET_Y_LPARAM(lParam);
+	case WM_MOUSEMOVE: {
+		const int x = GET_X_LPARAM(lParam);
+		const int y = GET_Y_LPARAM(lParam);
 
-        if (g_leftDown) {
-            g_ang1 += static_cast<float>(x - g_mouseX) * 0.002f;
-            g_ang2 += static_cast<float>(y - g_mouseY) * 0.002f;
-            if (x != g_mouseX || y != g_mouseY) {
-                g_mouseMoved = true;
-            }
-        }
+		if (g_leftDown) {
+			g_ang1 += static_cast<float>(x - g_mouseX) * 0.002f;
+			g_ang2 += static_cast<float>(y - g_mouseY) * 0.002f;
+			if (x != g_mouseX || y != g_mouseY) {
+				g_mouseMoved = true;
+			}
+		}
 
-        if (g_rightDown) {
-            const float cx = static_cast<float>(g_renderWidth);
-            const float cy = static_cast<float>(g_renderHeight);
-            const float l = g_len * 4.0f / std::max(1.0f, cx + cy);
-            const float dx = static_cast<float>(x - g_mouseX);
-            const float dy = static_cast<float>(y - g_mouseY);
+		if (g_rightDown) {
+			const float cx = static_cast<float>(g_renderWidth);
+			const float cy = static_cast<float>(g_renderHeight);
+			const float l = g_len * 4.0f / std::max(1.0f, cx + cy);
+			const float dx = static_cast<float>(x - g_mouseX);
+			const float dy = static_cast<float>(y - g_mouseY);
 
-            g_cenx += l * (-dx * std::sin(g_ang1) - dy * std::sin(g_ang2) * std::cos(g_ang1));
-            g_ceny += l * (dy * std::cos(g_ang2));
-            g_cenz += l * (dx * std::cos(g_ang1) - dy * std::sin(g_ang2) * std::sin(g_ang1));
-            if (x != g_mouseX || y != g_mouseY) {
-                g_mouseMoved = true;
-            }
-        }
+			g_cenx += l * (-dx * std::sin(g_ang1) - dy * std::sin(g_ang2) * std::cos(g_ang1));
+			g_ceny += l * (dy * std::cos(g_ang2));
+			g_cenz += l * (dx * std::cos(g_ang1) - dy * std::sin(g_ang2) * std::sin(g_ang1));
+			if (x != g_mouseX || y != g_mouseY) {
+				g_mouseMoved = true;
+			}
+		}
 
-        g_mouseX = x;
-        g_mouseY = y;
-        return 0;
-    }
+		g_mouseX = x;
+		g_mouseY = y;
+		return 0;
+	}
 
-    case WM_MOUSEWHEEL: {
-        const short delta = GET_WHEEL_DELTA_WPARAM(wParam);
-        g_len *= std::exp(-0.001f * static_cast<float>(delta));
-        g_len = std::max(0.01f, std::min(g_len, 1000.0f));
-        return 0;
-    }
+	case WM_MOUSEWHEEL: {
+		const short delta = GET_WHEEL_DELTA_WPARAM(wParam);
+		g_len *= std::exp(-0.001f * static_cast<float>(delta));
+		g_len = std::max(0.01f, std::min(g_len, 1000.0f));
+		return 0;
+	}
 
-    case WM_TOUCH:
-        HandleTouch(hwnd, lParam);
-        return 0;
+	case WM_TOUCH:
+		HandleTouch(hwnd, lParam);
+		return 0;
 
-    case WM_GETMINMAXINFO: {
-        auto* minMax = reinterpret_cast<MINMAXINFO*>(lParam);
-        minMax->ptMinTrackSize.x = 256;
-        minMax->ptMinTrackSize.y = 256;
-        return 0;
-    }
+	case WM_GETMINMAXINFO: {
+		auto* minMax = reinterpret_cast<MINMAXINFO*>(lParam);
+		minMax->ptMinTrackSize.x = 256;
+		minMax->ptMinTrackSize.y = 256;
+		return 0;
+	}
 
-    case WM_ERASEBKGND:
-        return 1;
+	case WM_ERASEBKGND:
+		return 1;
 
-    case WM_KEYDOWN:
-        if (g_hiddenWhileWorking) {
-            return 0;
-        }
+	case WM_KEYDOWN:
+		if (g_hiddenWhileWorking) {
+			return 0;
+		}
 
-        switch (wParam) {
-        case VK_SPACE:
-            if ((lParam & (1u << 30)) == 0) {
-                SetPaused(!g_paused);
-            }
-            break;
+		switch (wParam) {
+		case VK_SPACE:
+			if ((lParam & (1u << 30)) == 0) {
+				SetPaused(!g_paused);
+			}
+			break;
 
-        case VK_DOWN:
-            if (g_alpha < 255) {
-                ++g_alpha;
-                SetMainWindowAlpha(g_alpha);
-                SaveWindowSettings();
-            }
-            break;
+		case VK_DOWN:
+			if (g_alpha < 255) {
+				++g_alpha;
+				SetMainWindowAlpha(g_alpha);
+				SaveWindowSettings();
+			}
+			break;
 
-        case VK_UP:
-            if (g_alpha > 0) {
-                --g_alpha;
-                SetMainWindowAlpha(g_alpha);
-                SaveWindowSettings();
-            }
-            break;
+		case VK_UP:
+			if (g_alpha > 0) {
+				--g_alpha;
+				SetMainWindowAlpha(g_alpha);
+				SaveWindowSettings();
+			}
+			break;
 
-        default:
-            break;
-        }
-        return 0;
+		default:
+			break;
+		}
+		return 0;
 
-    case WM_EXITSIZEMOVE:
-        SaveWindowSettings();
-        return 0;
+	case WM_EXITSIZEMOVE:
+		SaveWindowSettings();
+		return 0;
 
-    case WM_NCHITTEST:
-        if (g_hiddenWhileWorking) {
-            return HTTRANSPARENT;
-        }
-        break;
+	case WM_NCHITTEST:
+		if (g_hiddenWhileWorking) {
+			return HTTRANSPARENT;
+		}
+		break;
 
-    case WM_MOUSEACTIVATE:
-        if (g_hiddenWhileWorking) {
-            return MA_NOACTIVATE;
-        }
-        break;
+	case WM_MOUSEACTIVATE:
+		if (g_hiddenWhileWorking) {
+			return MA_NOACTIVATE;
+		}
+		break;
 
-    case WM_CLOSE:
-        SaveWindowSettings();
-        RemoveTrayIcon();
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & (~static_cast<LONG_PTR>(WS_EX_LAYERED)));
-        break;
+	case WM_CLOSE:
+		SaveWindowSettings();
+		RemoveTrayIcon();
+		SetWindowLongPtrW(hwnd, GWL_EXSTYLE, GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & (~static_cast<LONG_PTR>(WS_EX_LAYERED)));
+		break;
 
-    case WM_DESTROY:
-        UnregisterTouchWindow(hwnd);
-        RemoveTrayIcon();
-        SaveWindowSettings();
-        if (g_kernelDialog) {
-            DestroyWindow(g_kernelDialog);
-            g_kernelDialog = nullptr;
-            g_kernelDialogEdit = nullptr;
-        }
-        if (g_settingsDialog) {
-            DestroyWindow(g_settingsDialog);
-            g_settingsDialog = nullptr;
-        }
-        if (g_previewWindow) {
-            DestroyWindow(g_previewWindow);
-            g_previewWindow = nullptr;
-        }
-        PostQuitMessage(0);
-        return 0;
-    }
+	case WM_DESTROY:
+		UnregisterTouchWindow(hwnd);
+		RemoveTrayIcon();
+		SaveWindowSettings();
+		if (g_kernelDialog) {
+			DestroyWindow(g_kernelDialog);
+			g_kernelDialog = nullptr;
+			g_kernelDialogEdit = nullptr;
+		}
+		if (g_settingsDialog) {
+			DestroyWindow(g_settingsDialog);
+			g_settingsDialog = nullptr;
+		}
+		if (g_previewWindow) {
+			DestroyWindow(g_previewWindow);
+			g_previewWindow = nullptr;
+		}
+		PostQuitMessage(0);
+		return 0;
+	}
 
-    return DefWindowProcW(hwnd, message, wParam, lParam);
+	return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
 } // namespace
@@ -2867,193 +2911,193 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 
 static bool LoadApplicationIcons(HINSTANCE instance)
 {
-    const int largeWidth = GetSystemMetrics(SM_CXICON);
-    const int largeHeight = GetSystemMetrics(SM_CYICON);
-    const int smallWidth = GetSystemMetrics(SM_CXSMICON);
-    const int smallHeight = GetSystemMetrics(SM_CYSMICON);
+	const int largeWidth = GetSystemMetrics(SM_CXICON);
+	const int largeHeight = GetSystemMetrics(SM_CYICON);
+	const int smallWidth = GetSystemMetrics(SM_CXSMICON);
+	const int smallHeight = GetSystemMetrics(SM_CYSMICON);
 
-    g_hIcon = static_cast<HICON>(LoadImageW(
-        instance,
-        MAKEINTRESOURCEW(IDI_ICON1),
-        IMAGE_ICON,
-        largeWidth,
-        largeHeight,
-        LR_DEFAULTCOLOR));
+	g_hIcon = static_cast<HICON>(LoadImageW(
+		instance,
+		MAKEINTRESOURCEW(IDI_ICON1),
+		IMAGE_ICON,
+		largeWidth,
+		largeHeight,
+		LR_DEFAULTCOLOR));
 
-    g_hIconSmall = static_cast<HICON>(LoadImageW(
-        instance,
-        MAKEINTRESOURCEW(IDI_ICON1),
-        IMAGE_ICON,
-        smallWidth,
-        smallHeight,
-        LR_DEFAULTCOLOR));
+	g_hIconSmall = static_cast<HICON>(LoadImageW(
+		instance,
+		MAKEINTRESOURCEW(IDI_ICON1),
+		IMAGE_ICON,
+		smallWidth,
+		smallHeight,
+		LR_DEFAULTCOLOR));
 
-    if (!g_hIcon && g_hIconSmall) {
-        g_hIcon = g_hIconSmall;
-    }
-    if (!g_hIconSmall && g_hIcon) {
-        g_hIconSmall = g_hIcon;
-    }
+	if (!g_hIcon && g_hIconSmall) {
+		g_hIcon = g_hIconSmall;
+	}
+	if (!g_hIconSmall && g_hIcon) {
+		g_hIconSmall = g_hIcon;
+	}
 
-    if (!g_hIconSmall && g_hIcon) {
-        g_hIconSmall = g_hIcon;
-    }
+	if (!g_hIconSmall && g_hIcon) {
+		g_hIconSmall = g_hIcon;
+	}
 
-    return g_hIcon != nullptr;
+	return g_hIcon != nullptr;
 }
 
 static void DestroyApplicationIcons()
 {
-    if (g_hIconSmall && g_hIconSmall != g_hIcon) {
-        DestroyIcon(g_hIconSmall);
-    }
+	if (g_hIconSmall && g_hIconSmall != g_hIcon) {
+		DestroyIcon(g_hIconSmall);
+	}
 
-    if (g_hIcon) {
-        DestroyIcon(g_hIcon);
-    }
+	if (g_hIcon) {
+		DestroyIcon(g_hIcon);
+	}
 
-    g_hIconSmall = nullptr;
-    g_hIcon = nullptr;
+	g_hIconSmall = nullptr;
+	g_hIcon = nullptr;
 }
 
 int WINAPI wWinMain(
-    _In_ HINSTANCE hInstance,
-    _In_opt_ HINSTANCE hPrevInstance,
-    _In_ LPWSTR lpCmdLine,
-    _In_ int nShowCmd
+	_In_ HINSTANCE hInstance,
+	_In_opt_ HINSTANCE hPrevInstance,
+	_In_ LPWSTR lpCmdLine,
+	_In_ int nShowCmd
 ) {
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+	SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
-    Gdiplus::GdiplusStartupInput gdiplusStartupInput;
-    if (Gdiplus::GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, nullptr) != Gdiplus::Ok) {
-        g_gdiplusToken = 0;
-    }
+	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+	if (Gdiplus::GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, nullptr) != Gdiplus::Ok) {
+		g_gdiplusToken = 0;
+	}
 
-    LoadWindowSettings();
+	LoadWindowSettings();
 
-    g_taskbarCreatedMessage = RegisterWindowMessageW(L"TaskbarCreated");
+	g_taskbarCreatedMessage = RegisterWindowMessageW(L"TaskbarCreated");
 
-    LoadApplicationIcons(hInstance);
+	LoadApplicationIcons(hInstance);
 
-    for (size_t i = 0, l = std::size(g_kWindowClass) - 1; i < l; ++i) {
-        g_kWindowClass[i] -= 3;
-    }
-    for (size_t i = 0, l = std::size(g_kProductUrl) - 1; i < l; ++i) {
-        g_kProductUrl[i] -= 6;
-    }
+	for (size_t i = 0, l = std::size(g_kWindowClass) - 1; i < l; ++i) {
+		g_kWindowClass[i] -= 3;
+	}
+	for (size_t i = 0, l = std::size(g_kProductUrl) - 1; i < l; ++i) {
+		g_kProductUrl[i] -= 6;
+	}
 
-    if (HWND h = FindWindowW(g_kWindowClass, NULL)) {
-        int user = IDYES;
-        if (g_askUserWhenConflict) 
-            TaskDialog(NULL, hInstance, L"vsbm for Windows", L"It seems that you've running another instance of "
-            L"the application.", L"Do you want to switch to the running instance (recommended), "
-            L"or open a new instance (not recommended)?", TDCBF_YES_BUTTON | TDCBF_NO_BUTTON | TDCBF_CANCEL_BUTTON,
-            TD_INFORMATION_ICON, &user);
-        if (user == IDCANCEL) return ERROR_CANCELLED;
-        else if (user == IDYES) {
-            SetForegroundWindow(h);
-            return ERROR_SUCCESS;
-        }
-    }
+	if (HWND h = FindWindowW(g_kWindowClass, NULL)) {
+		int user = IDYES;
+		if (g_askUserWhenConflict) 
+			TaskDialog(NULL, hInstance, L"vsbm for Windows", L"It seems that you've running another instance of "
+			L"the application.", L"Do you want to switch to the running instance (recommended), "
+			L"or open a new instance (not recommended)?", TDCBF_YES_BUTTON | TDCBF_NO_BUTTON | TDCBF_CANCEL_BUTTON,
+			TD_INFORMATION_ICON, &user);
+		if (user == IDCANCEL) return ERROR_CANCELLED;
+		else if (user == IDYES) {
+			SetForegroundWindow(h);
+			return ERROR_SUCCESS;
+		}
+	}
 
-    WNDCLASSEXW wc{};
-    wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-    wc.lpfnWndProc = WindowProc;
-    wc.hInstance = hInstance;
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-    wc.hIcon = wc.hIconSm = g_hIcon;
-    wc.lpszClassName = g_kWindowClass;
+	WNDCLASSEXW wc{};
+	wc.cbSize = sizeof(wc);
+	wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+	wc.lpfnWndProc = WindowProc;
+	wc.hInstance = hInstance;
+	wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+	wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+	wc.hIcon = wc.hIconSm = g_hIcon;
+	wc.lpszClassName = g_kWindowClass;
 
-    if (!RegisterClassExW(&wc)) {
-        return 1;
-    }
+	if (!RegisterClassExW(&wc)) {
+		return 1;
+	}
 
-    int windowX = CW_USEDEFAULT;
-    int windowY = CW_USEDEFAULT;
-    int windowWidth = kDefaultWindowWidth;
-    int windowHeight = kDefaultWindowHeight;
+	int windowX = CW_USEDEFAULT;
+	int windowY = CW_USEDEFAULT;
+	int windowWidth = kDefaultWindowWidth;
+	int windowHeight = kDefaultWindowHeight;
 
-    if (g_windowSettings.hasPositionAndSize) {
-        RECT saved{
-            g_windowSettings.left,
-            g_windowSettings.top,
-            g_windowSettings.left + g_windowSettings.width,
-            g_windowSettings.top + g_windowSettings.height
-        };
-        ClampSavedWindowRectToMonitor(saved);
-        windowX = saved.left;
-        windowY = saved.top;
-        windowWidth = saved.right - saved.left;
-        windowHeight = saved.bottom - saved.top;
-    }
+	if (g_windowSettings.hasPositionAndSize) {
+		RECT saved{
+			g_windowSettings.left,
+			g_windowSettings.top,
+			g_windowSettings.left + g_windowSettings.width,
+			g_windowSettings.top + g_windowSettings.height
+		};
+		ClampSavedWindowRectToMonitor(saved);
+		windowX = saved.left;
+		windowY = saved.top;
+		windowWidth = saved.right - saved.left;
+		windowHeight = saved.bottom - saved.top;
+	}
 
-    g_hwnd = CreateWindowExW(
-        WS_EX_LAYERED,
-        g_kWindowClass,
-        kWindowTitle,
-        WS_OVERLAPPEDWINDOW,
-        windowX,
-        windowY,
-        windowWidth,
-        windowHeight,
-        nullptr,
-        nullptr,
-        hInstance,
-        nullptr);
+	g_hwnd = CreateWindowExW(
+		WS_EX_LAYERED,
+		g_kWindowClass,
+		kWindowTitle,
+		WS_OVERLAPPEDWINDOW,
+		windowX,
+		windowY,
+		windowWidth,
+		windowHeight,
+		nullptr,
+		nullptr,
+		hInstance,
+		nullptr);
 
-    if (!g_hwnd) {
-        return 2;
-    }
+	if (!g_hwnd) {
+		return 2;
+	}
 
-    AddKernelMenuItem(g_hwnd);
+	AddKernelMenuItem(g_hwnd);
 
-    if (!g_windowSettings.hasPositionAndSize) {
-        centerWindow(g_hwnd, 0);
-    }
+	if (!g_windowSettings.hasPositionAndSize) {
+		centerWindow(g_hwnd, 0);
+	}
 
-    SetMainWindowAlpha(g_alpha);
-    InitializeFpsCounter();
-    ApplyPausedTitle();
+	SetMainWindowAlpha(g_alpha);
+	InitializeFpsCounter();
+	ApplyPausedTitle();
 
-    ShowWindow(g_hwnd, nShowCmd);
-    UpdateWindow(g_hwnd);
+	ShowWindow(g_hwnd, nShowCmd);
+	UpdateWindow(g_hwnd);
 
-    if (!InitD3D()) {
-        ShutdownD3D();
-        DestroyWindow(g_hwnd);
-        return 3;
-    }
+	if (!InitD3D()) {
+		ShutdownD3D();
+		DestroyWindow(g_hwnd);
+		return 3;
+	}
 
-    Render();
-    AddTrayIcon();
+	Render();
+	AddTrayIcon();
 
-    timeBeginPeriod(1);
+	timeBeginPeriod(1);
 
-    MSG message{};
-    for (;;) {
-        if (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
-            if (message.message == WM_QUIT) {
-                break;
-            }
-            if (g_settingsDialog && IsDialogMessageW(g_settingsDialog, &message)) {
-                continue;
-            }
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
-            continue;
-        }
-        PumpRenderFrame();
-    }
+	MSG message{};
+	for (;;) {
+		if (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+			if (message.message == WM_QUIT) {
+				break;
+			}
+			if (g_settingsDialog && IsDialogMessageW(g_settingsDialog, &message)) {
+				continue;
+			}
+			TranslateMessage(&message);
+			DispatchMessageW(&message);
+			continue;
+		}
+		PumpRenderFrame();
+	}
 
-    timeEndPeriod(1);
+	timeEndPeriod(1);
 
-    ShutdownD3D();
-    UnregisterClassW(g_kWindowClass, hInstance);
-    DestroyApplicationIcons();
-    if (g_gdiplusToken) {
-        Gdiplus::GdiplusShutdown(g_gdiplusToken);
-    }
-    return static_cast<int>(message.wParam);
+	ShutdownD3D();
+	UnregisterClassW(g_kWindowClass, hInstance);
+	DestroyApplicationIcons();
+	if (g_gdiplusToken) {
+		Gdiplus::GdiplusShutdown(g_gdiplusToken);
+	}
+	return static_cast<int>(message.wParam);
 }
