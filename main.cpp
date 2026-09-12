@@ -2995,8 +2995,14 @@ int WINAPI wWinMain(
 			TD_INFORMATION_ICON, &user);
 		if (user == IDCANCEL) return ERROR_CANCELLED;
 		else if (user == IDYES) {
-			SetForegroundWindow(h);
-			return ERROR_SUCCESS;
+			AllowSetForegroundWindow(ASFW_ANY);
+			if (SendMessageTimeoutW(h, WMAPP_TRAYICON, 0, WM_LBUTTONUP, 
+				SMTO_BLOCK | SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT, 5000, 0))
+				return ERROR_SUCCESS;
+			TaskDialog(NULL, hInstance, L"vsbm for Windows", L"Cannot activate the running instance!",
+				L"Do you want to open a new instance or give up?",
+				TDCBF_YES_BUTTON | TDCBF_CANCEL_BUTTON, TD_WARNING_ICON, &user);
+			if (user == IDCANCEL) return 0xcfffffff;
 		}
 	}
 
