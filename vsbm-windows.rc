@@ -26,8 +26,8 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_DEFAULT
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,3,1,0
- PRODUCTVERSION 1,3,1,0
+ FILEVERSION 1,3,2,0
+ PRODUCTVERSION 1,3,2,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -44,12 +44,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "vsbm"
             VALUE "FileDescription", "vsbm"
-            VALUE "FileVersion", "1.3.1.0"
+            VALUE "FileVersion", "1.3.2.0"
             VALUE "InternalName", "vsbm-windows.exe"
             VALUE "LegalCopyright", "Copyright (C) 2026"
             VALUE "OriginalFilename", "vsbm-windows.exe"
             VALUE "ProductName", "Volume Shader Benchmark"
-            VALUE "ProductVersion", "1.3.1.0"
+            VALUE "ProductVersion", "1.3.2.0"
         END
     END
     BLOCK "VarFileInfo"
@@ -102,13 +102,13 @@ END
 
 IDR_BIN_LICENSE         BIN                     "LICENSE"
 
-IDR_BIN_KERNEL          BIN                     "shaders\\kernel.txt"
+IDR_BIN_KERNEL          BIN                     "shaders\\kernel.bin"
 
-IDR_BIN_VERTEXSHADER    BIN                     "shaders\\VertexShader.txt"
+IDR_BIN_VERTEXSHADER    BIN                     "shaders\\VertexShader.bin"
 
-IDR_BIN_PIXELSHADER1    BIN                     "shaders\\PixelShader1.txt"
+IDR_BIN_PIXELSHADER1    BIN                     "shaders\\PixelShader1.bin"
 
-IDR_BIN_PIXELSHADER2    BIN                     "shaders\\PixelShader2.txt"
+IDR_BIN_PIXELSHADER2    BIN                     "shaders\\PixelShader2.bin"
 
 #endif    // 非特定语言(默认值) resources
 /////////////////////////////////////////////////////////////////////////////

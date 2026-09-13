@@ -173,13 +173,11 @@
     <Image Include="vsbm.ico" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="shaders\kernel.txt" />
-    <Text Include="shaders\PixelShader1.txt" />
-    <Text Include="shaders\PixelShader2.txt" />
-    <Text Include="shaders\VertexShader.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <None Include="LICENSE" />
+    <None Include="shaders\kernel.bin" />
+    <None Include="shaders\PixelShader1.bin" />
+    <None Include="shaders\PixelShader2.bin" />
+    <None Include="shaders\VertexShader.bin" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

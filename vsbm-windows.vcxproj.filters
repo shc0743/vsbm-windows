@@ -40,21 +40,19 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="shaders\kernel.txt">
-      <Filter>资源文件</Filter>
-    </Text>
-    <Text Include="shaders\PixelShader1.txt">
-      <Filter>资源文件</Filter>
-    </Text>
-    <Text Include="shaders\PixelShader2.txt">
-      <Filter>资源文件</Filter>
-    </Text>
-    <Text Include="shaders\VertexShader.txt">
-      <Filter>资源文件</Filter>
-    </Text>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="LICENSE">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="shaders\kernel.bin">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="shaders\VertexShader.bin">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="shaders\PixelShader1.bin">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="shaders\PixelShader2.bin">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>

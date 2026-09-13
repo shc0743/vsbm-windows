@@ -1,6 +1,4 @@
 
-// Refines a sign-changing interval using a fixed number of bisection steps.
-// The original m1/m2 values were never read after assignment, so they are omitted.
 float refineCrossingDistance(
     float3 rayOrigin,
     float3 rayDirection,
