@@ -1,0 +1,39 @@
+
+struct VSOutput {
+	float4 position : SV_Position;
+	float3 dir      : TEXCOORD0;
+	float3 localdir : TEXCOORD1;
+};
+
+cbuffer Camera : register(b0)
+{
+	float3 right;
+	float  _pad0;
+	float3 forward;
+	float  _pad1;
+	float3 up;
+	float  _pad2;
+	float3 origin;
+	float  x;
+	float  y;
+	float  len;
+	float  _pad3;
+};
+
+VSOutput main(uint vertexId : SV_VertexID)
+{
+	// One oversized triangle covers the entire viewport. This removes the
+	// vertex-buffer/input-layout path entirely while preserving the exact
+	// [-1,1] screen coordinates used by the WebGL version.
+	float2 p;
+	if (vertexId == 0)      p = float2(-1.0, -1.0);
+	else if (vertexId == 1) p = float2(-1.0,  3.0);
+	else                    p = float2( 3.0, -1.0);
+
+	VSOutput output;
+	output.position = float4(p, 0.0, 1.0);
+	output.dir = forward + right * p.x * x + up * p.y * y;
+	output.localdir = float3(p.x * x, p.y * y, -1.0);
+	return output;
+}
+

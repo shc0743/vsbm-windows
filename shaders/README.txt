@@ -1,0 +1,1 @@
+These files MUST NOT have BOM

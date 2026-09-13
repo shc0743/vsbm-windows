@@ -45,9 +45,13 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 wchar_t g_kWindowClass[] = L"yvep#iru#Zlqgrzv#^kwwsv=22jlwkxe1frp2vkf3:762yvep0zlqgrzv`";
 wchar_t g_kProductUrl[] = L"nzzvy@55mozn{h4ius5yni6=:95|yhs3}otju}y";
+wchar_t g_kOriginalUrl[] = L"p||x{B77k\x82v}tt6oq|p}j6qw7~{ju";
+wchar_t g_kOnlinePreviewUrl[] = L"dpplo6++n]s*cepdq^qoan_kjpajp*_ki+od_,30/+ro^i)sej`kso+nabo+da]`o+i]opan+ro^i*ljc";
 int g_askUserWhenConflict = 0;
 
 namespace {
+
+using namespace std::string_literals;
 
 constexpr wchar_t kWindowTitle[] = L"vsbm for Windows";
 constexpr int kDefaultWindowWidth = 1280;
@@ -55,7 +59,6 @@ constexpr int kDefaultWindowHeight = 900;
 constexpr int kRenderReferenceSize = 1024;
 constexpr float kPi = 3.14159265358979323846f;
 
-// The old timer-based loop advanced the angle by 0.01 per tick at ~60 Hz.
 constexpr double kAutoRotationSpeed = 0.6;
 constexpr UINT kMaxFrameRateLimit = 1000000;
 
@@ -81,227 +84,7 @@ constexpr int IDC_SETTINGS_FPS = 2201;
 constexpr int IDC_SETTINGS_VSYNC = 2202;
 constexpr int IDC_SETTINGS_OK = 2203;
 constexpr int IDC_SETTINGS_CANCEL = 2204;
-
-constexpr char kVertexShader[] = R"HLSL(
-struct VSOutput {
-	float4 position : SV_Position;
-	float3 dir      : TEXCOORD0;
-	float3 localdir : TEXCOORD1;
-};
-
-cbuffer Camera : register(b0)
-{
-	float3 right;
-	float  _pad0;
-	float3 forward;
-	float  _pad1;
-	float3 up;
-	float  _pad2;
-	float3 origin;
-	float  x;
-	float  y;
-	float  len;
-	float  _pad3;
-};
-
-VSOutput main(uint vertexId : SV_VertexID)
-{
-	// One oversized triangle covers the entire viewport. This removes the
-	// vertex-buffer/input-layout path entirely while preserving the exact
-	// [-1,1] screen coordinates used by the WebGL version.
-	float2 p;
-	if (vertexId == 0)      p = float2(-1.0, -1.0);
-	else if (vertexId == 1) p = float2(-1.0,  3.0);
-	else                    p = float2( 3.0, -1.0);
-
-	VSOutput output;
-	output.position = float4(p, 0.0, 1.0);
-	output.dir = forward + right * p.x * x + up * p.y * y;
-	output.localdir = float3(p.x * x, p.y * y, -1.0);
-	return output;
-}
-)HLSL";
-
-constexpr char kPixelShaderPrefix[] = R"HLSL(
-#define PI 3.14159265358979324
-#define M_L 0.3819660113
-#define M_R 0.6180339887
-#define MAXR 8
-#define SOLVER 8
-
-struct PSInput {
-	float4 position : SV_Position;
-	float3 dir      : TEXCOORD0;
-	float3 localdir : TEXCOORD1;
-};
-
-cbuffer Camera : register(b0)
-{
-	float3 right;
-	float  _pad0;
-	float3 forward;
-	float  _pad1;
-	float3 up;
-	float  _pad2;
-	float3 origin;
-	float  x;
-	float  y;
-	float  len;
-	float  _pad3;
-};
-
-)HLSL";
-
-constexpr char kPixelShaderSuffix[] = R"HLSL(
-
-float4 main(PSInput input) : SV_Target
-{
-	float3 color = float3(0.0, 0.0, 0.0);
-	int hit = 0;
-	float r3 = 0.0;
-
-	const float stepSize = 0.002;
-	float v1 = kernal(origin + input.dir * (stepSize * len));
-	float v2 = kernal(origin);
-
-	for (int k = 2; k < 1002; ++k) {
-		float3 ver = origin + input.dir * (stepSize * len * (float)k);
-		float v = kernal(ver);
-
-		if (v > 0.0 && v1 < 0.0) {
-			float r1 = stepSize * len * (float)(k - 1);
-			float r2 = stepSize * len * (float)k;
-			float m1 = kernal(origin + input.dir * r1);
-			float m2 = kernal(origin + input.dir * r2);
-
-			for (int l = 0; l < SOLVER; ++l) {
-				r3 = r1 * 0.5 + r2 * 0.5;
-				float m3 = kernal(origin + input.dir * r3);
-				if (m3 > 0.0) {
-					r2 = r3;
-					m2 = m3;
-				} else {
-					r1 = r3;
-					m1 = m3;
-				}
-			}
-
-			if (r3 < 2.0 * len) {
-				hit = 1;
-				break;
-			}
-		}
-
-		if (v < v1 && v1 > v2 && v1 < 0.0 && (v1 * 2.0 > v || v1 * 2.0 > v2)) {
-			float r1 = stepSize * len * (float)(k - 2);
-			float r2 = stepSize * len * ((float)(k - 2) + 2.0 * M_L);
-			float r3Local = stepSize * len * ((float)(k - 2) + 2.0 * M_R);
-			float r4 = stepSize * len * (float)k;
-			float m2 = kernal(origin + input.dir * r2);
-			float m3 = kernal(origin + input.dir * r3Local);
-
-			for (int l = 0; l < MAXR; ++l) {
-				if (m2 > m3) {
-					r4 = r3Local;
-					r3Local = r2;
-					r2 = r4 * M_L + r1 * M_R;
-					m3 = m2;
-					m2 = kernal(origin + input.dir * r2);
-				} else {
-					r1 = r2;
-					r2 = r3Local;
-					r3Local = r4 * M_R + r1 * M_L;
-					m2 = m3;
-					m3 = kernal(origin + input.dir * r3Local);
-				}
-			}
-
-			if (m2 > 0.0) {
-				r1 = stepSize * len * (float)(k - 2);
-				float rr2 = r2;
-				float rr3 = rr2;
-				float m1 = kernal(origin + input.dir * r1);
-				float mm2 = kernal(origin + input.dir * rr2);
-
-				for (int l = 0; l < SOLVER; ++l) {
-					rr3 = r1 * 0.5 + rr2 * 0.5;
-					float mm3 = kernal(origin + input.dir * rr3);
-					if (mm3 > 0.0) {
-						rr2 = rr3;
-						mm2 = mm3;
-					} else {
-						r1 = rr3;
-						m1 = mm3;
-					}
-				}
-
-				if (rr3 < 2.0 * len && rr3 > stepSize * len) {
-					r3 = rr3;
-					hit = 1;
-					break;
-				}
-			} else if (m3 > 0.0) {
-				r1 = stepSize * len * (float)(k - 2);
-				float rr2 = r3Local;
-				float rr3 = rr2;
-				float m1 = kernal(origin + input.dir * r1);
-				float mm2 = kernal(origin + input.dir * rr2);
-
-				for (int l = 0; l < SOLVER; ++l) {
-					rr3 = r1 * 0.5 + rr2 * 0.5;
-					float mm3 = kernal(origin + input.dir * rr3);
-					if (mm3 > 0.0) {
-						rr2 = rr3;
-						mm2 = mm3;
-					} else {
-						r1 = rr3;
-						m1 = mm3;
-					}
-				}
-
-				if (rr3 < 2.0 * len && rr3 > stepSize * len) {
-					r3 = rr3;
-					hit = 1;
-					break;
-				}
-			}
-		}
-
-		v2 = v1;
-		v1 = v;
-	}
-
-	if (hit == 1) {
-		float3 ver = origin + input.dir * r3;
-		float radiusSquared = dot(ver, ver);
-
-		float3 n;
-		const float normalOffset = 0.00025;
-		n.x = kernal(ver - right * (r3 * normalOffset)) - kernal(ver + right * (r3 * normalOffset));
-		n.y = kernal(ver - up * (r3 * normalOffset)) - kernal(ver + up * (r3 * normalOffset));
-		n.z = kernal(ver + forward * (r3 * normalOffset)) - kernal(ver - forward * (r3 * normalOffset));
-		float nLengthSquared = dot(n, n);
-		n *= 1.0 / sqrt(nLengthSquared);
-
-		float3 viewLocal = input.localdir;
-		viewLocal *= 1.0 / sqrt(dot(viewLocal, viewLocal));
-
-		float3 refl = n * (-2.0 * dot(viewLocal, n)) + viewLocal;
-		float lighting = refl.x * 0.276 + refl.y * 0.920 + refl.z * 0.276;
-		float normalLighting = n.x * 0.276 + n.y * 0.920 + n.z * 0.276;
-		lighting = max(0.0, lighting);
-		lighting = lighting * lighting * lighting * lighting;
-		lighting = lighting * 0.45 + normalLighting * 0.25 + 0.3;
-
-		n.x = sin(radiusSquared * 10.0) * 0.5 + 0.5;
-		n.y = sin(radiusSquared * 10.0 + 2.05) * 0.5 + 0.5;
-		n.z = sin(radiusSquared * 10.0 - 2.05) * 0.5 + 0.5;
-		color = n * lighting;
-	}
-
-	return float4(color, 1.0);
-}
-)HLSL";
+constexpr int IDC_SETTINGS_RESOLUTION = 2205;
 
 struct alignas(16) CameraConstants {
 	float right[3];
@@ -338,6 +121,9 @@ HWND g_settingsFpsEdit = nullptr;
 HWND g_settingsVsyncCheck = nullptr;
 HWND g_settingsOk = nullptr;
 HWND g_settingsCancel = nullptr;
+HWND g_settingsResolutionLabel = nullptr;
+HWND g_settingsResolutionCombo = nullptr;
+int g_settingsLastResolutionIndex = 0;
 HWND g_previewWindow = nullptr;
 Gdiplus::Bitmap* g_previewBitmap = nullptr;
 IStream* g_previewStream = nullptr;
@@ -403,6 +189,8 @@ double g_activeSeconds = 0.0;
 
 UINT g_frameRateLimit = 0;
 bool g_vsyncEnabled = false;
+int g_resolutionWidth = 0;
+int g_resolutionHeight = 0;
 bool g_occluded = false;
 bool g_renderFailed = false;
 LARGE_INTEGER g_lastFrameTime{};
@@ -410,6 +198,58 @@ LARGE_INTEGER g_lastFrameTime{};
 std::string g_kernel;
 std::string g_defaultKernel;
 std::wstring GetExecutableDirectory();
+
+struct ResolutionOption {
+	int width;
+	int height;
+};
+
+// width == -1 marks a disabled separator entry; 0x0 is the unrestricted option.
+constexpr ResolutionOption kResolutionOptions[] = {
+	{0, 0}, {-1, 0},
+	{320, 240}, {480, 360}, {640, 480}, {800, 600}, {1024, 768},
+	{1152, 864}, {1280, 960}, {1400, 1050}, {1600, 1200}, {1920, 1440}, {2048, 1536},
+	{-1, 0},
+	{640, 360}, {854, 480}, {1280, 720}, {1366, 768}, {1600, 900},
+	{1920, 1080}, {2560, 1440}, {3840, 2160}, {5120, 2880}, {7680, 4320},
+};
+
+bool IsResolutionSeparator(int index)
+{
+	return index >= 0 && index < static_cast<int>(std::size(kResolutionOptions)) &&
+		kResolutionOptions[index].width == -1;
+}
+
+void FormatResolutionOptionLabel(int index, wchar_t* buffer, size_t bufferCount)
+{
+	if (index < 0 || index >= static_cast<int>(std::size(kResolutionOptions))) {
+		buffer[0] = L'\0';
+		return;
+	}
+
+	const ResolutionOption& option = kResolutionOptions[index];
+	std::wstring label;
+	if (option.width == -1) {
+		label = L"--------";
+	}
+	else if (option.width == 0) {
+		label = L"Any resolution";
+	}
+	else {
+		label = std::format(L"{}x{}", option.width, option.height);
+	}
+	wcscpy_s(buffer, bufferCount, label.c_str());
+}
+
+int FindResolutionOption(int width, int height)
+{
+	for (int i = 0; i < static_cast<int>(std::size(kResolutionOptions)); ++i) {
+		if (kResolutionOptions[i].width == width && kResolutionOptions[i].height == height) {
+			return i;
+		}
+	}
+	return 0;
+}
 
 std::wstring GetIniPath()
 {
@@ -459,6 +299,31 @@ void WriteIniStr(const wchar_t* section, const wchar_t* key,
 	WritePrivateProfileStringW(section, key, value.c_str(), GetIniPath().c_str());
 }
 
+bool LoadResToString(
+	DWORD dwResName, std::wstring lpResType, std::string& outData, HMODULE hInst
+) {
+	HMODULE hInstance = hInst ? hInst : GetModuleHandle(NULL);
+
+	HRSRC hResID = ::FindResourceW(
+		hInstance, MAKEINTRESOURCEW(dwResName), lpResType.c_str());
+	if (!hResID) return false;
+
+	HGLOBAL hRes = ::LoadResource(hInstance, hResID);
+	if (!hRes) return false;
+
+	LPVOID pRes = ::LockResource(hRes);
+	if (pRes == NULL) return false;
+
+	DWORD dwResSize = ::SizeofResource(hInstance, hResID);
+	if (dwResSize == 0) {
+		outData.clear();
+		return true;
+	}
+
+	outData.assign(static_cast<const char*>(pRes), dwResSize);
+	return true;
+}
+
 struct WindowSettings {
 	bool hasPositionAndSize = false;
 	int left = CW_USEDEFAULT;
@@ -505,6 +370,18 @@ DECLSPEC_NOINLINE void LoadWindowSettings()
 		g_vsyncEnabled = vsyncEnabled != 0;
 	}
 
+	std::wstring resolution;
+	if (ReadIniStr(L"Settings", L"Resolution", resolution) &&
+		resolution != L"Any" && !resolution.empty()) {
+		int width = 0;
+		int height = 0;
+		if (swscanf_s(resolution.c_str(), L"%dx%d", &width, &height) == 2 &&
+			FindResolutionOption(width, height) != 0) {
+			g_resolutionWidth = width;
+			g_resolutionHeight = height;
+		}
+	}
+
 	WCHAR compName[64]{};
 	DWORD compSize = 63;
 	GetComputerNameW(compName, &compSize);
@@ -547,6 +424,12 @@ void SaveWindowSettings()
 
 	WriteIniInt(L"Settings", L"FrameRateLimit", static_cast<int>(g_frameRateLimit));
 	WriteIniInt(L"Settings", L"VsyncEnabled", g_vsyncEnabled ? 1 : 0);
+	if (g_resolutionWidth > 0 && g_resolutionHeight > 0) {
+		WriteIniStr(L"Settings", L"Resolution",
+			std::format(L"{}x{}", g_resolutionWidth, g_resolutionHeight));
+	} else {
+		WriteIniStr(L"Settings", L"Resolution", L"Any");
+	}
 
 	WCHAR compName[64]{};
 	DWORD compSize = 63;
@@ -577,30 +460,103 @@ void ClampSavedWindowRectToMonitor(RECT& rect)
 	}
 }
 
-void UpdateWindowTitle()
+SIZE GetClientSizeForWindowRect(HWND hwnd, const RECT& windowRect)
+{
+	RECT currentClient{};
+	GetClientRect(hwnd, &currentClient);
+	POINT clientOrigin{0, 0};
+	ClientToScreen(hwnd, &clientOrigin);
+	RECT currentWindow{};
+	GetWindowRect(hwnd, &currentWindow);
+
+	const int currentClientWidth = currentClient.right - currentClient.left;
+	const int currentClientHeight = currentClient.bottom - currentClient.top;
+	const int borderLeft = clientOrigin.x - currentWindow.left;
+	const int borderTop = clientOrigin.y - currentWindow.top;
+	const int borderRight = currentWindow.right - (clientOrigin.x + currentClientWidth);
+	const int borderBottom = currentWindow.bottom - (clientOrigin.y + currentClientHeight);
+
+	SIZE clientSize{};
+	clientSize.cx = std::max<LONG>(0,
+		(windowRect.right - windowRect.left) - borderLeft - borderRight);
+	clientSize.cy = std::max<LONG>(0,
+		(windowRect.bottom - windowRect.top) - borderTop - borderBottom);
+	return clientSize;
+}
+
+void UpdateWindowTitle(int clientWidth, int clientHeight)
 {
 	if (!g_hwnd) {
 		return;
 	}
 
-	wchar_t title[128]{};
 	const unsigned displayedFps = g_fps > 0.0
 		? static_cast<unsigned>(std::lround(g_fps))
 		: 0u;
 
 	const wchar_t* modifiedPrefix = (g_kernel != g_defaultKernel) ? L"* " : L"";
+	std::wstring title;
 	if (g_paused) {
-		swprintf_s(title, L"%s%s - Paused - %u FPS", modifiedPrefix, kWindowTitle, displayedFps);
+		title = std::format(L"{}{} - Paused - {} FPS @ {}x{}",
+			modifiedPrefix, kWindowTitle, displayedFps, clientWidth, clientHeight);
 	} else {
-		swprintf_s(title, L"%s%s - %u FPS", modifiedPrefix, kWindowTitle, displayedFps);
+		title = std::format(L"{}{} - {} FPS @ {}x{}",
+			modifiedPrefix, kWindowTitle, displayedFps, clientWidth, clientHeight);
 	}
 
-	SetWindowTextW(g_hwnd, title);
+	SetWindowTextW(g_hwnd, title.c_str());
+}
+
+void UpdateWindowTitle()
+{
+	RECT client{};
+	GetClientRect(g_hwnd, &client);
+	UpdateWindowTitle(
+		std::max<LONG>(0, client.right - client.left),
+		std::max<LONG>(0, client.bottom - client.top));
 }
 
 void ApplyPausedTitle()
 {
 	UpdateWindowTitle();
+}
+
+void ApplyResolutionStyleAndSize()
+{
+	if (!g_hwnd) {
+		return;
+	}
+
+	LONG_PTR style = GetWindowLongPtrW(g_hwnd, GWL_STYLE);
+	const bool fixedResolution = g_resolutionWidth > 0 && g_resolutionHeight > 0;
+	if (fixedResolution) {
+		style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
+	} else {
+		style |= WS_THICKFRAME | WS_MAXIMIZEBOX;
+	}
+	SetWindowLongPtrW(g_hwnd, GWL_STYLE, style);
+	SetWindowPos(g_hwnd, nullptr, 0, 0, 0, 0,
+		SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+	if (!fixedResolution) {
+		return;
+	}
+
+	if (IsZoomed(g_hwnd)) {
+		ShowWindow(g_hwnd, SW_RESTORE);
+	}
+
+	RECT clientRect{0, 0, g_resolutionWidth, g_resolutionHeight};
+	const LONG_PTR exStyle = GetWindowLongPtrW(g_hwnd, GWL_EXSTYLE);
+	AdjustWindowRectEx(&clientRect, static_cast<DWORD>(style), FALSE, static_cast<DWORD>(exStyle));
+
+	RECT current{};
+	GetWindowRect(g_hwnd, &current);
+	SetWindowPos(g_hwnd, nullptr,
+		current.left, current.top,
+		clientRect.right - clientRect.left,
+		clientRect.bottom - clientRect.top,
+		SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 double GetElapsedSeconds(LARGE_INTEGER start, LARGE_INTEGER end)
@@ -1063,23 +1019,9 @@ std::string NormalizeNewlinesToLF(const std::string& input)
 
 std::string GetDefaultKernelSource()
 {
-	return R"GLSL(float kernal(vec3 ver){
-   vec3 a;
-   float b,c,d,e;
-   a=ver;
-   for(int i=0;i<5;i++){
-	   b=length(a);
-	   c=atan(a.y,a.x)*8.0;
-	   e=1.0/b;
-	   d=acos(a.z/b)*8.0;
-	   b=pow(b,8.0);
-	   a=vec3(b*sin(d)*cos(c),b*sin(d)*sin(c),b*cos(d))+ver;
-	   if(b>6.0){
-		   break;
-	   }
-   }
-   return 4.0-a.x*a.x-a.y*a.y-a.z*a.z;
-})GLSL";
+	std::string str;
+	LoadResToString(IDR_BIN_KERNEL, L"BIN", str, 0);
+	return str;
 }
 
 std::string GetKernelSource()
@@ -1095,10 +1037,12 @@ std::string GetKernelSource()
 
 std::string BuildPixelShaderSource(const std::string& kernelSource)
 {
-	std::string result = kPixelShaderPrefix;
+	std::string tmp, result;
+	LoadResToString(IDR_BIN_PIXELSHADER1, L"BIN", result, 0);
+	LoadResToString(IDR_BIN_PIXELSHADER2, L"BIN", tmp, 0);
 	result += TranslateKernelGLSLToHLSL(kernelSource);
 	result += "\n";
-	result += kPixelShaderSuffix;
+	result += tmp;
 	return result;
 }
 
@@ -1118,9 +1062,11 @@ bool CompileVertexShader()
 {
 	ID3DBlob* shader = nullptr;
 	ID3DBlob* errors = nullptr;
+	std::string vs;
+	LoadResToString(IDR_BIN_VERTEXSHADER, L"BIN", vs, 0);
 	const HRESULT hr = D3DCompile(
-		kVertexShader,
-		sizeof(kVertexShader) - 1,
+		vs.c_str(),
+		vs.size(),
 		"vertex.hlsl",
 		nullptr,
 		D3D_COMPILE_STANDARD_FILE_INCLUDE,
@@ -1264,6 +1210,19 @@ bool ResizeSwapChain(UINT width, UINT height)
 	return true;
 }
 
+void OpenUrl(std::wstring url, HWND hwnd) {
+	STARTUPINFOW si{ sizeof(si) }; PROCESS_INFORMATION pi{};
+	WCHAR s32[256]{}; GetSystemDirectoryW(s32, 256);
+	url = std::format(L"RunDLL \"{}/url.dll\",FileProtocolHandler \"{}\"", s32, url);
+	if (!CreateProcessW((s32 + L"/rundll32.exe"s).c_str(), url.data(), 0, 0, 0, 0, 0, 0, &si, &pi)) {
+		MessageBoxW(hwnd, L"Cannot open the page.", NULL, MB_ICONHAND);
+	}
+	else {
+		CloseHandle(pi.hThread);
+		CloseHandle(pi.hProcess);
+	}
+}
+
 bool InitD3D()
 {
 	RECT rect{};
@@ -1326,9 +1285,9 @@ bool InitD3D()
 	}
 
 	if (FAILED(hr)) {
-		wchar_t text[256];
-		swprintf_s(text, L"D3D11CreateDeviceAndSwapChain failed: 0x%08X", static_cast<unsigned>(hr));
-		MessageBoxW(g_hwnd, text, L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
+		const std::wstring text = std::format(
+			L"D3D11CreateDeviceAndSwapChain failed: 0x{:08X}", static_cast<unsigned>(hr));
+		MessageBoxW(g_hwnd, text.c_str(), L"Direct3D 11 Error", MB_OK | MB_ICONERROR);
 		return false;
 	}
 
@@ -1366,7 +1325,10 @@ bool InitD3D()
 	g_defaultKernel = GetDefaultKernelSource();
 	g_kernel = GetKernelSource();
 	if (!CompileKernelShader(g_kernel, true)) {
-		return false;
+		g_kernel = g_defaultKernel;
+		if (!CompileKernelShader(g_kernel, true)) {
+			return false;
+		}
 	}
 
 	UpdateRenderViewport();
@@ -1469,9 +1431,10 @@ void Render()
 	} else {
 		g_renderFailed = true;
 		HRESULT reason = g_device ? g_device->GetDeviceRemovedReason() : E_FAIL;
-		wchar_t text[256];
-		swprintf_s(text, L"Present failed: 0x%08X\nDevice removed reason: 0x%08X", static_cast<unsigned>(presentHr), static_cast<unsigned>(reason));
-		MessageBoxW(g_hwnd, text, L"Direct3D 11 Present Error", MB_OK | MB_ICONERROR);
+		const std::wstring text = std::format(
+			L"Present failed: 0x{:08X}\nDevice removed reason: 0x{:08X}",
+			static_cast<unsigned>(presentHr), static_cast<unsigned>(reason));
+		MessageBoxW(g_hwnd, text.c_str(), L"Direct3D 11 Present Error", MB_OK | MB_ICONERROR);
 	}
 }
 
@@ -1978,6 +1941,8 @@ void ApplySettingsDialogFont(HWND hwnd)
 		g_settingsFpsLabel,
 		g_settingsFpsEdit,
 		g_settingsVsyncCheck,
+		g_settingsResolutionLabel,
+		g_settingsResolutionCombo,
 		g_settingsOk,
 		g_settingsCancel,
 	};
@@ -2026,6 +1991,18 @@ void LayoutSettingsDialog(HWND hwnd)
 			std::max(1, width - margin * 2), rowHeight,
 			SWP_NOZORDER);
 	}
+	if (g_settingsResolutionLabel) {
+		SetWindowPos(g_settingsResolutionLabel, nullptr,
+			margin, ScaleForDpi(118, dpi),
+			ScaleForDpi(70, dpi), rowHeight,
+			SWP_NOZORDER);
+	}
+	if (g_settingsResolutionCombo) {
+		SetWindowPos(g_settingsResolutionCombo, nullptr,
+			margin + ScaleForDpi(70, dpi) + ScaleForDpi(8, dpi), ScaleForDpi(118, dpi),
+			ScaleForDpi(200, dpi), rowHeight,
+			SWP_NOZORDER);
+	}
 	if (g_settingsOk) {
 		SetWindowPos(g_settingsOk, nullptr,
 			std::max(margin, width - margin - buttonWidth * 2 - gap),
@@ -2055,7 +2032,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 		const int buttonHeight = ScaleForDpi(28, dpi);
 
 		g_settingsFpsLabel = CreateWindowExW(
-			0, L"STATIC", L"Frame rate (0 = unlimited):",
+			0, WC_STATICW, L"Frame rate (0 = unlimited):",
 			WS_CHILD | WS_VISIBLE,
 			margin, margin, ScaleForDpi(260, dpi), rowHeight,
 			hwnd, nullptr, instance, nullptr);
@@ -2070,7 +2047,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			nullptr);
 
 		g_settingsVsyncCheck = CreateWindowExW(
-			0, L"BUTTON", L"Enable &vertical sync",
+			0, WC_BUTTONW, L"Enable &vertical sync",
 			WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
 			0, 0, ScaleForDpi(240, dpi), rowHeight,
 			hwnd,
@@ -2078,8 +2055,24 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			instance,
 			nullptr);
 
+		g_settingsResolutionLabel = CreateWindowExW(
+			0, WC_STATICW, L"Resolution:",
+			WS_CHILD | WS_VISIBLE,
+			0, 0, ScaleForDpi(260, dpi), rowHeight,
+			hwnd, nullptr, instance, nullptr);
+
+		g_settingsResolutionCombo = CreateWindowExW(
+			0, WC_COMBOBOXW, nullptr,
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
+			CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS,
+			0, 0, ScaleForDpi(200, dpi), rowHeight + ScaleForDpi(170, dpi),
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_RESOLUTION)),
+			instance,
+			nullptr);
+
 		g_settingsOk = CreateWindowExW(
-			0, L"BUTTON", L"&OK",
+			0, WC_BUTTONW, L"&OK",
 			WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
 			0, 0, buttonWidth, buttonHeight,
 			hwnd,
@@ -2088,7 +2081,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			nullptr);
 
 		g_settingsCancel = CreateWindowExW(
-			0, L"BUTTON", L"&Cancel",
+			0, WC_BUTTONW, L"&Cancel",
 			WS_CHILD | WS_VISIBLE | WS_TABSTOP,
 			0, 0, buttonWidth, buttonHeight,
 			hwnd,
@@ -2097,19 +2090,78 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			nullptr);
 
 		if (!g_settingsFpsLabel || !g_settingsFpsEdit || !g_settingsVsyncCheck ||
+			!g_settingsResolutionLabel || !g_settingsResolutionCombo ||
 			!g_settingsOk || !g_settingsCancel) {
 			return -1;
 		}
 
-		wchar_t buffer[16]{};
-		swprintf_s(buffer, L"%u", g_frameRateLimit);
-		SetWindowTextW(g_settingsFpsEdit, buffer);
+		SetWindowTextW(g_settingsFpsEdit, std::format(L"{}", g_frameRateLimit).c_str());
 		Button_SetCheck(g_settingsVsyncCheck, g_vsyncEnabled ? BST_CHECKED : BST_UNCHECKED);
+
+		for (int i = 0; i < static_cast<int>(std::size(kResolutionOptions)); ++i) {
+			wchar_t optionLabel[32]{};
+			FormatResolutionOptionLabel(i, optionLabel, std::size(optionLabel));
+			SendMessageW(g_settingsResolutionCombo, CB_ADDSTRING, 0,
+				reinterpret_cast<LPARAM>(optionLabel));
+		}
+		const int initialResolution = FindResolutionOption(g_resolutionWidth, g_resolutionHeight);
+		SendMessageW(g_settingsResolutionCombo, CB_SETCURSEL, initialResolution, 0);
+		g_settingsLastResolutionIndex = initialResolution;
 
 		ApplySettingsDialogFont(hwnd);
 		LayoutSettingsDialog(hwnd);
 		SetFocus(g_settingsFpsEdit);
 		return 0;
+	}
+
+	case WM_MEASUREITEM: {
+		auto* measure = reinterpret_cast<MEASUREITEMSTRUCT*>(lParam);
+		if (measure && measure->CtlType == ODT_COMBOBOX) {
+			measure->itemHeight = ScaleForDpi(20, GetWindowDpiSafe(hwnd));
+			return TRUE;
+		}
+		break;
+	}
+
+	case WM_DRAWITEM: {
+		const auto* draw = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
+		if (!draw || draw->CtlType != ODT_COMBOBOX) {
+			break;
+		}
+
+		const int originalItem = static_cast<int>(draw->itemID);
+		int item = originalItem;
+		const bool separator = IsResolutionSeparator(item);
+		if (item < 0) {
+			item = static_cast<int>(SendMessageW(draw->hwndItem, CB_GETCURSEL, 0, 0));
+		}
+
+		wchar_t optionLabel[32]{};
+		if (item >= 0) {
+			SendMessageW(draw->hwndItem, CB_GETLBTEXT, static_cast<WPARAM>(item),
+				reinterpret_cast<LPARAM>(optionLabel));
+		}
+
+		COLORREF textColor = GetSysColor(COLOR_WINDOWTEXT);
+		HBRUSH background = GetSysColorBrush(COLOR_WINDOW);
+		if (separator) {
+			textColor = GetSysColor(COLOR_GRAYTEXT);
+			background = GetSysColorBrush(COLOR_BTNFACE);
+		} else if (originalItem >= 0 && (draw->itemState & ODS_SELECTED)) {
+			textColor = GetSysColor(COLOR_HIGHLIGHTTEXT);
+			background = GetSysColorBrush(COLOR_HIGHLIGHT);
+		}
+
+		FillRect(draw->hDC, &draw->rcItem, background);
+		SetBkMode(draw->hDC, TRANSPARENT);
+		SetTextColor(draw->hDC, textColor);
+		RECT textRect = draw->rcItem;
+		const int padding = ScaleForDpi(6, GetWindowDpiSafe(hwnd));
+		textRect.left += padding;
+		textRect.right -= padding;
+		DrawTextW(draw->hDC, optionLabel, -1, &textRect,
+			DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+		return TRUE;
 	}
 
 	case WM_SIZE:
@@ -2133,6 +2185,19 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
+		case IDC_SETTINGS_RESOLUTION:
+			if (HIWORD(wParam) == CBN_SELCHANGE) {
+				const int selected = static_cast<int>(
+					SendMessageW(g_settingsResolutionCombo, CB_GETCURSEL, 0, 0));
+				if (IsResolutionSeparator(selected)) {
+					SendMessageW(g_settingsResolutionCombo, CB_SETCURSEL,
+						g_settingsLastResolutionIndex, 0);
+				} else {
+					g_settingsLastResolutionIndex = selected;
+				}
+			}
+			return 0;
+
 		case IDC_SETTINGS_OK: {
 			wchar_t buffer[16]{};
 			GetWindowTextW(g_settingsFpsEdit, buffer, static_cast<int>(std::size(buffer)));
@@ -2151,6 +2216,19 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 
 			g_frameRateLimit = static_cast<UINT>(parsed);
 			g_vsyncEnabled = Button_GetCheck(g_settingsVsyncCheck) == BST_CHECKED;
+
+			const int resolutionIndex = static_cast<int>(
+				SendMessageW(g_settingsResolutionCombo, CB_GETCURSEL, 0, 0));
+			if (resolutionIndex > 0 && !IsResolutionSeparator(resolutionIndex)) {
+				const ResolutionOption& option = kResolutionOptions[resolutionIndex];
+				g_resolutionWidth = option.width;
+				g_resolutionHeight = option.height;
+			} else {
+				g_resolutionWidth = 0;
+				g_resolutionHeight = 0;
+			}
+
+			ApplyResolutionStyleAndSize();
 			SaveWindowSettings();
 			DestroyWindow(hwnd);
 			return 0;
@@ -2170,6 +2248,8 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 		g_settingsFpsLabel = nullptr;
 		g_settingsFpsEdit = nullptr;
 		g_settingsVsyncCheck = nullptr;
+		g_settingsResolutionLabel = nullptr;
+		g_settingsResolutionCombo = nullptr;
 		g_settingsOk = nullptr;
 		g_settingsCancel = nullptr;
 		if (g_settingsDialogFont) {
@@ -2228,7 +2308,7 @@ void OpenSettingsDialog()
 
 	const UINT dpi = GetWindowDpiSafe(g_hwnd);
 	const int width = ScaleForDpi(380, dpi);
-	const int height = ScaleForDpi(180, dpi);
+	const int height = ScaleForDpi(250, dpi);
 
 	g_settingsDialog = CreateWindowExW(
 		0,
@@ -2294,7 +2374,7 @@ bool LoadPreviewBitmap()
 	ReleasePreviewBitmap();
 
 	const HMODULE module = GetModuleHandleW(nullptr);
-	const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(IDB_PNG1), L"PNG");
+	const HRSRC resource = 0;//FindResourceW(module, MAKEINTRESOURCEW(IDB_PNG1), L"PNG");
 	if (!resource) {
 		return false;
 	}
@@ -2431,6 +2511,15 @@ void OpenRenderPreview()
 	if (g_previewWindow) {
 		ShowWindow(g_previewWindow, SW_SHOWNORMAL);
 		SetForegroundWindow(g_previewWindow);
+		return;
+	}
+
+	int u = MessageBoxW(g_hwnd, L"Render preview has been removed because the high entropy PNG is always recognized"
+		L" as malicious payload.\nIf you want to preview the render effect, you can open the online resource.\n"
+		L"Do you want to open the online preview?", NULL, MB_ICONERROR | MB_OKCANCEL);
+	if (u == IDCANCEL) return;
+	else if (u == IDOK) {
+		OpenUrl(g_kOnlinePreviewUrl, g_hwnd);
 		return;
 	}
 
@@ -2650,6 +2739,17 @@ void HandleTouch(HWND hwnd, LPARAM lParam)
 	CloseTouchInputHandle(touchHandle);
 }
 
+LRESULT CALLBACK VerySimpleLicenseViewerProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+	switch (message) {
+	case WM_CLOSE:
+		DestroyWindow(hwnd);
+		break;
+	default:
+		return DefWindowProcW(hwnd, message, wParam, lParam);
+	}
+	return 0;
+}
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	if (g_taskbarCreatedMessage && message == g_taskbarCreatedMessage) {
@@ -2678,6 +2778,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		SaveWindowSettings();
 		return 0;
 
+	case WM_SIZING: {
+		const auto* proposed = reinterpret_cast<const RECT*>(lParam);
+		const SIZE clientSize = GetClientSizeForWindowRect(hwnd, *proposed);
+		UpdateWindowTitle(clientSize.cx, clientSize.cy);
+		break;
+	}
+
 	case WM_SIZE:
 		if (g_device && wParam != SIZE_MINIMIZED) {
 			const UINT width = static_cast<UINT>(std::max<LONG>(1, LOWORD(lParam)));
@@ -2685,6 +2792,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 			if (ResizeSwapChain(width, height)) {
 				Render();
 			}
+			UpdateWindowTitle(static_cast<int>(width), static_cast<int>(height));
 		}
 		return 0;
 
@@ -2715,7 +2823,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 			return 0;
 		}
 		if (command == IDM_HELP) {
-			TaskDialog(hwnd, NULL, L"Help - vsbm for Windows", L"Here is the help document.", (
+			TASKDIALOGCONFIG cfg{};
+			std::wstring content = (
 				L"Press Space to pause/resume animation.\r\n"
 				L"Press left button and move to rotate.\r\n"
 				L"Press right button to move the view.\r\n"
@@ -2723,8 +2832,70 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 				L"Press Up to decrease opacity, or Down to increase it.\r\n"
 				L"Use the system menu to edit the Kernel, open Settings, view statistics, or hide the window.\r\n"
 				L"The notification-area icon can restore the window or exit the application.\r\n"
-				L"\r\nThanks for using this application!\r\n" + std::wstring(g_kProductUrl)).c_str(),
-				TDCBF_CANCEL_BUTTON, TD_INFORMATION_ICON, NULL);
+				L"\r\nThanks for using this application!"
+				L"\r\nOriginal webpage: " + std::wstring(g_kOriginalUrl) +
+				L"\r\nWindows version by: " + std::wstring(g_kProductUrl) + 
+				L" , GPL-3.0 License."
+#ifndef _WIN64
+				+ L"\r\nYou're currently using the 32 bit version of the application."
+#endif
+			).c_str();
+			const TASKDIALOG_BUTTON buttons[] = {
+				{0x1001, L"Open repository"},
+				{0x1002, L"Open original webpage"},
+				{0x1003, L"Show license"},
+			};
+			cfg.cbSize = sizeof(TASKDIALOGCONFIG);
+			cfg.pszWindowTitle = L"Help - vsbm for Windows";
+			cfg.pszMainInstruction = L"Here is the help document.";
+			cfg.pszContent = content.c_str();
+			cfg.pszMainIcon = TD_INFORMATION_ICON;
+			cfg.cButtons = 3;
+			cfg.pButtons = buttons;
+			cfg.nDefaultButton = 1;
+			cfg.dwCommonButtons = TDCBF_CANCEL_BUTTON;
+			cfg.hwndParent = hwnd;
+			int user = 0;
+			HRESULT hr = TaskDialogIndirect(&cfg, &user, nullptr, nullptr);
+			if (!SUCCEEDED(hr)) user = 1;
+			if (user >= 0x1001 && user <= 0x1002) {
+				std::wstring url;
+				if (user == 0x1001) url = g_kProductUrl;
+				if (user == 0x1002) url = g_kOriginalUrl;
+				OpenUrl(url, hwnd);
+				return 0;
+			}
+			if (user == 0x1003) {
+				std::string u8LicenseText;
+				if (!LoadResToString(IDR_BIN_LICENSE, L"BIN", u8LicenseText, 0)) {
+					MessageBoxW(hwnd, L"Cannot get content", NULL, MB_ICONHAND);
+					return 0;
+				}
+				ReplaceAll(u8LicenseText, "\n", "\r\n");
+				std::wstring LicenseText = Utf8ToWide(u8LicenseText);
+				const UINT dpi = GetWindowDpiSafe(g_hwnd);
+				const int width = ScaleForDpi(640, dpi);
+				const int height = ScaleForDpi(480, dpi);
+				RECT pr{}; GetWindowRect(hwnd, &pr);
+				int x = pr.left + ((pr.right - pr.left) - width) / 2;
+				int y = pr.top + ((pr.bottom - pr.top) - height) / 2;
+				HWND hWnd = CreateWindowExW(WS_EX_TOOLWINDOW, L"#32770", L"License - vsbm for Windows",
+					WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_DLGFRAME, x, y, width, height, hwnd, NULL, NULL, NULL);
+				if (!hWnd) {
+					MessageBoxW(hwnd, L"Cannot open the page.", NULL, MB_ICONHAND);
+					return 0;
+				}
+				RECT rc{}; GetClientRect(hWnd, &rc);
+				HWND hEdit = CreateWindowExW(0, WC_EDITW, L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL |
+					ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_MULTILINE | ES_READONLY,
+					0, 0, rc.right - rc.left, rc.bottom - rc.top, hWnd, (HMENU)1, NULL, NULL);
+				SetWindowLongPtrW(hWnd, GWLP_WNDPROC, (LONG_PTR)VerySimpleLicenseViewerProc);
+				SendMessageW(hEdit, WM_SETTEXT, 0, (LPARAM)LicenseText.c_str());
+				SendMessageW(hEdit, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
+				ShowWindow(hWnd, SW_SHOWNORMAL);
+				SetForegroundWindow(hWnd);
+				return 0;
+			}
 			return 0;
 		}
 		break;
@@ -2960,14 +3131,27 @@ static void DestroyApplicationIcons()
 	g_hIcon = nullptr;
 }
 
+DECLSPEC_NOINLINE static void DecryptGlobalStrings() {
+	for (size_t i = 0, l = std::size(g_kWindowClass) - 1; i < l; ++i) {
+		g_kWindowClass[i] -= 3;
+	}
+	for (size_t i = 0, l = std::size(g_kProductUrl) - 1; i < l; ++i) {
+		g_kProductUrl[i] -= 6;
+	}
+	for (size_t i = 0, l = std::size(g_kOriginalUrl) - 1; i < l; ++i) {
+		g_kOriginalUrl[i] -= 8;
+	}
+	for (size_t i = 0, l = std::size(g_kOnlinePreviewUrl) - 1; i < l; ++i) {
+		g_kOnlinePreviewUrl[i] -= -4;
+	}
+}
+
 int WINAPI wWinMain(
 	_In_ HINSTANCE hInstance,
 	_In_opt_ HINSTANCE hPrevInstance,
 	_In_ LPWSTR lpCmdLine,
 	_In_ int nShowCmd
 ) {
-	SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-
 	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
 	if (Gdiplus::GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, nullptr) != Gdiplus::Ok) {
 		g_gdiplusToken = 0;
@@ -2978,13 +3162,7 @@ int WINAPI wWinMain(
 	g_taskbarCreatedMessage = RegisterWindowMessageW(L"TaskbarCreated");
 
 	LoadApplicationIcons(hInstance);
-
-	for (size_t i = 0, l = std::size(g_kWindowClass) - 1; i < l; ++i) {
-		g_kWindowClass[i] -= 3;
-	}
-	for (size_t i = 0, l = std::size(g_kProductUrl) - 1; i < l; ++i) {
-		g_kProductUrl[i] -= 6;
-	}
+	DecryptGlobalStrings();
 
 	if (HWND h = FindWindowW(g_kWindowClass, NULL)) {
 		int user = IDYES;
@@ -3025,6 +3203,12 @@ int WINAPI wWinMain(
 	int windowWidth = kDefaultWindowWidth;
 	int windowHeight = kDefaultWindowHeight;
 
+	const bool fixedResolution = g_resolutionWidth > 0 && g_resolutionHeight > 0;
+	DWORD windowStyle = WS_OVERLAPPEDWINDOW;
+	if (fixedResolution) {
+		windowStyle &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
+	}
+
 	if (g_windowSettings.hasPositionAndSize) {
 		RECT saved{
 			g_windowSettings.left,
@@ -3035,15 +3219,24 @@ int WINAPI wWinMain(
 		ClampSavedWindowRectToMonitor(saved);
 		windowX = saved.left;
 		windowY = saved.top;
-		windowWidth = saved.right - saved.left;
-		windowHeight = saved.bottom - saved.top;
+		if (!fixedResolution) {
+			windowWidth = saved.right - saved.left;
+			windowHeight = saved.bottom - saved.top;
+		}
+	}
+
+	if (fixedResolution) {
+		RECT clientRect{0, 0, g_resolutionWidth, g_resolutionHeight};
+		AdjustWindowRectEx(&clientRect, windowStyle, FALSE, WS_EX_LAYERED);
+		windowWidth = clientRect.right - clientRect.left;
+		windowHeight = clientRect.bottom - clientRect.top;
 	}
 
 	g_hwnd = CreateWindowExW(
 		WS_EX_LAYERED,
 		g_kWindowClass,
 		kWindowTitle,
-		WS_OVERLAPPEDWINDOW,
+		windowStyle,
 		windowX,
 		windowY,
 		windowWidth,

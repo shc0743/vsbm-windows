@@ -161,9 +161,6 @@
     <Manifest Include="D3D11RaymarchApp.manifest" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="kernel.glsl" />
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -174,7 +171,15 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="vsbm.ico" />
-    <Image Include="vsbm.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="shaders\kernel.txt" />
+    <Text Include="shaders\PixelShader1.txt" />
+    <Text Include="shaders\PixelShader2.txt" />
+    <Text Include="shaders\VertexShader.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="LICENSE" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

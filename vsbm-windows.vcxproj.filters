@@ -35,15 +35,26 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="vsbm.png">
-      <Filter>资源文件</Filter>
-    </Image>
     <Image Include="vsbm.ico">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <None Include="kernel.glsl">
+    <Text Include="shaders\kernel.txt">
+      <Filter>资源文件</Filter>
+    </Text>
+    <Text Include="shaders\PixelShader1.txt">
+      <Filter>资源文件</Filter>
+    </Text>
+    <Text Include="shaders\PixelShader2.txt">
+      <Filter>资源文件</Filter>
+    </Text>
+    <Text Include="shaders\VertexShader.txt">
+      <Filter>资源文件</Filter>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="LICENSE">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>

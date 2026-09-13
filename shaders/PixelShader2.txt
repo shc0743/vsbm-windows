@@ -1,0 +1,172 @@
+
+// Refines a sign-changing interval using a fixed number of bisection steps.
+// The original m1/m2 values were never read after assignment, so they are omitted.
+float refineCrossingDistance(
+    float3 rayOrigin,
+    float3 rayDirection,
+    float nearDistance,
+    float farDistance,
+    float initialMidDistance)
+{
+    float dNear = nearDistance;
+    float dFar = farDistance;
+    float dMid = initialMidDistance;
+
+    for (int i = 0; i < SOLVER; ++i)
+    {
+        dMid = dNear * 0.5 + dFar * 0.5;
+        float fieldMid = kernal(rayOrigin + rayDirection * dMid);
+
+        if (fieldMid > 0.0)
+        {
+            dFar = dMid;
+        }
+        else
+        {
+            dNear = dMid;
+        }
+    }
+
+    return dMid;
+}
+
+float4 main(PSInput input) : SV_Target
+{
+    float3 color = float3(0.0, 0.0, 0.0);
+    bool hasHit = false;
+    float hitDistance = 0.0;
+
+    const float stepSize = 0.002;
+    const float rayStep = stepSize * len;
+
+    // Sample the field at the first step and at the ray origin.
+    float fieldPrev = kernal(origin + input.dir * rayStep);
+    float fieldPrevPrev = kernal(origin);
+
+    for (int step = 2; step < 1002; ++step)
+    {
+        float3 samplePosition = origin + input.dir * (rayStep * (float)step);
+        float fieldCurrent = kernal(samplePosition);
+
+        // Case 1: negative-to-positive sign change between the previous and current step.
+        if (fieldCurrent > 0.0 && fieldPrev < 0.0)
+        {
+            float nearDistance = rayStep * (float)(step - 1);
+            float farDistance = rayStep * (float)step;
+
+            float midDistance = refineCrossingDistance(
+                origin, input.dir, nearDistance, farDistance, 0.0);
+
+            if (midDistance < 2.0 * len)
+            {
+                hasHit = true;
+                hitDistance = midDistance;
+                break;
+            }
+        }
+
+        // Case 2: local negative dip; refine with MAXR then bisect.
+        if (fieldCurrent < fieldPrev && fieldPrev > fieldPrevPrev && fieldPrev < 0.0 &&
+            (fieldPrev * 2.0 > fieldCurrent || fieldPrev * 2.0 > fieldPrevPrev))
+        {
+            float baseDistance = rayStep * (float)(step - 2);
+            float distanceA = rayStep * ((float)(step - 2) + 2.0 * M_L);
+            float distanceB = rayStep * ((float)(step - 2) + 2.0 * M_R);
+            float distanceC = rayStep * (float)step;
+            float fieldA = kernal(origin + input.dir * distanceA);
+            float fieldB = kernal(origin + input.dir * distanceB);
+
+            for (int i = 0; i < MAXR; ++i)
+            {
+                if (fieldA > fieldB)
+                {
+                    distanceC = distanceB;
+                    distanceB = distanceA;
+                    distanceA = distanceC * M_L + baseDistance * M_R;
+                    fieldB = fieldA;
+                    fieldA = kernal(origin + input.dir * distanceA);
+                }
+                else
+                {
+                    baseDistance = distanceA;
+                    distanceA = distanceB;
+                    distanceB = distanceC * M_R + baseDistance * M_L;
+                    fieldA = fieldB;
+                    fieldB = kernal(origin + input.dir * distanceB);
+                }
+            }
+
+            if (fieldA > 0.0)
+            {
+                baseDistance = rayStep * (float)(step - 2);
+                float refinedNear = distanceA;
+                float refinedMid = refinedNear;
+
+                refinedMid = refineCrossingDistance(
+                    origin, input.dir, baseDistance, refinedNear, refinedMid);
+
+                if (refinedMid < 2.0 * len && refinedMid > rayStep)
+                {
+                    hitDistance = refinedMid;
+                    hasHit = true;
+                    break;
+                }
+            }
+            else if (fieldB > 0.0)
+            {
+                baseDistance = rayStep * (float)(step - 2);
+                float refinedNear = distanceB;
+                float refinedMid = refinedNear;
+
+                refinedMid = refineCrossingDistance(
+                    origin, input.dir, baseDistance, refinedNear, refinedMid);
+
+                if (refinedMid < 2.0 * len && refinedMid > rayStep)
+                {
+                    hitDistance = refinedMid;
+                    hasHit = true;
+                    break;
+                }
+            }
+        }
+
+        fieldPrevPrev = fieldPrev;
+        fieldPrev = fieldCurrent;
+    }
+
+    if (hasHit)
+    {
+        float3 hitPosition = origin + input.dir * hitDistance;
+        float radiusSquared = dot(hitPosition, hitPosition);
+
+        // Estimate the surface normal by central differences of the field.
+        float3 normal;
+        const float normalOffset = 0.00025;
+        normal.x = kernal(hitPosition - right * (hitDistance * normalOffset)) -
+                   kernal(hitPosition + right * (hitDistance * normalOffset));
+        normal.y = kernal(hitPosition - up * (hitDistance * normalOffset)) -
+                   kernal(hitPosition + up * (hitDistance * normalOffset));
+        normal.z = kernal(hitPosition + forward * (hitDistance * normalOffset)) -
+                   kernal(hitPosition - forward * (hitDistance * normalOffset));
+        float normalLengthSquared = dot(normal, normal);
+        normal *= 1.0 / sqrt(normalLengthSquared);
+
+        float3 viewLocal = input.localdir;
+        viewLocal *= 1.0 / sqrt(dot(viewLocal, viewLocal));
+
+        float3 reflected = normal * (-2.0 * dot(viewLocal, normal)) + viewLocal;
+        float lighting = reflected.x * 0.276 + reflected.y * 0.920 + reflected.z * 0.276;
+        float normalLighting = normal.x * 0.276 + normal.y * 0.920 + normal.z * 0.276;
+        lighting = max(0.0, lighting);
+        lighting = lighting * lighting * lighting * lighting;
+        lighting = lighting * 0.45 + normalLighting * 0.25 + 0.3;
+
+        // Reuse normal as a procedural color tint.
+        normal.x = sin(radiusSquared * 10.0) * 0.5 + 0.5;
+        normal.y = sin(radiusSquared * 10.0 + 2.05) * 0.5 + 0.5;
+        normal.z = sin(radiusSquared * 10.0 - 2.05) * 0.5 + 0.5;
+        color = normal * lighting;
+    }
+
+    return float4(color, 1.0);
+}
