@@ -1,4 +1,4 @@
-float kernal(vec3 position) {
+﻿float kernal(vec3 position) {
     const int   MAX_ITERATIONS = 5;
     const float ANGLE_SCALE    = 8.0;
     const float RADIUS_POWER   = 8.0;
