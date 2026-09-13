@@ -54,9 +54,18 @@ namespace {
 using namespace std::string_literals;
 
 constexpr wchar_t kWindowTitle[] = L"vsbm for Windows";
-constexpr int kDefaultWindowWidth = 1280;
-constexpr int kDefaultWindowHeight = 900;
-constexpr int kRenderReferenceSize = 1024;
+constexpr int kDefaultClientWidth = 1024;
+constexpr int kDefaultClientHeight = 768;
+constexpr int kDefaultResolutionWidth = 0;
+constexpr int kDefaultResolutionHeight = 0;
+constexpr int kBenchmarkResolutionWidth = 1024;
+constexpr int kBenchmarkResolutionHeight = 1024;
+constexpr float kDefaultLen = 1.6f;
+constexpr float kDefaultAng1 = 2.8f;
+constexpr float kDefaultAng2 = 0.4f;
+constexpr float kDefaultCenX = 0.0f;
+constexpr float kDefaultCenY = 0.0f;
+constexpr float kDefaultCenZ = 0.0f;
 constexpr float kPi = 3.14159265358979323846f;
 
 constexpr double kAutoRotationSpeed = 0.6;
@@ -69,6 +78,8 @@ constexpr UINT_PTR IDM_HELP = 0x1F03;
 constexpr UINT_PTR IDM_SETTINGS = 0x1F04;
 constexpr UINT_PTR IDM_STATISTICS = 0x1F05;
 constexpr UINT_PTR IDM_RENDER_PREVIEW = 0x1F06;
+constexpr UINT_PTR IDM_RESET_CAMERA = 0x1F07;
+constexpr UINT_PTR IDM_BENCHMARK_MODE = 0x1F08;
 
 constexpr UINT_PTR IDM_TRAY_SHOW = 0x2F00;
 constexpr UINT_PTR IDM_TRAY_EXIT = 0x2F01;
@@ -85,6 +96,7 @@ constexpr int IDC_SETTINGS_VSYNC = 2202;
 constexpr int IDC_SETTINGS_OK = 2203;
 constexpr int IDC_SETTINGS_CANCEL = 2204;
 constexpr int IDC_SETTINGS_RESOLUTION = 2205;
+constexpr int IDC_SETTINGS_RESET = 2206;
 
 struct alignas(16) CameraConstants {
 	float right[3];
@@ -121,6 +133,7 @@ HWND g_settingsFpsEdit = nullptr;
 HWND g_settingsVsyncCheck = nullptr;
 HWND g_settingsOk = nullptr;
 HWND g_settingsCancel = nullptr;
+HWND g_settingsReset = nullptr;
 HWND g_settingsResolutionLabel = nullptr;
 HWND g_settingsResolutionCombo = nullptr;
 int g_settingsLastResolutionIndex = 0;
@@ -155,15 +168,15 @@ ID3D11PixelShader* g_pixelShader = nullptr;
 ID3D11Buffer* g_cameraBuffer = nullptr;
 ID3D11RasterizerState* g_rasterizerState = nullptr;
 
-UINT g_renderWidth = kRenderReferenceSize;
-UINT g_renderHeight = kRenderReferenceSize;
+UINT g_renderWidth = kDefaultClientWidth;
+UINT g_renderHeight = kDefaultClientHeight;
 
-float g_len = 1.6f;
-float g_ang1 = 2.8f;
-float g_ang2 = 0.4f;
-float g_cenx = 0.0f;
-float g_ceny = 0.0f;
-float g_cenz = 0.0f;
+float g_len = kDefaultLen;
+float g_ang1 = kDefaultAng1;
+float g_ang2 = kDefaultAng2;
+float g_cenx = kDefaultCenX;
+float g_ceny = kDefaultCenY;
+float g_cenz = kDefaultCenZ;
 
 bool g_leftDown = false;
 bool g_rightDown = false;
@@ -182,6 +195,7 @@ uint64_t g_fpsFrameCount = 0;
 double g_fps = 0.0;
 double g_maxFps = 0.0;
 double g_maxFpsHistory = 0.0;
+double g_maxFpsBenchmarkHistory = 0.0;
 
 uint64_t g_totalPresentedFrames = 0;
 LARGE_INTEGER g_activeSegmentStart{};
@@ -189,10 +203,15 @@ double g_activeSeconds = 0.0;
 
 UINT g_frameRateLimit = 0;
 bool g_vsyncEnabled = false;
-int g_resolutionWidth = 0;
-int g_resolutionHeight = 0;
+int g_resolutionWidth = kDefaultResolutionWidth;
+int g_resolutionHeight = kDefaultResolutionHeight;
 bool g_occluded = false;
 bool g_renderFailed = false;
+bool g_benchmarkMode = false;
+bool g_benchmarkAutoPausedByMinimize = false;
+bool g_benchmarkTransitioning = false;
+bool g_firstRunPending = false;
+bool g_iniDeletedByReset = false;
 LARGE_INTEGER g_lastFrameTime{};
 
 std::string g_kernel;
@@ -212,6 +231,11 @@ constexpr ResolutionOption kResolutionOptions[] = {
 	{-1, 0},
 	{640, 360}, {854, 480}, {1280, 720}, {1366, 768}, {1600, 900},
 	{1920, 1080}, {2560, 1440}, {3840, 2160}, {5120, 2880}, {7680, 4320},
+	{-1, 0},
+	{256, 256}, {320, 320}, {480, 480}, {512, 512}, {640, 640}, {720, 720},
+	{768, 768}, {1024, 1024}, {1080, 1080}, {1280, 1280}, {1440, 1440}, {1536, 1536},
+	{2048, 2048}, {2160, 2160}, {2560, 2560}, {2880, 2880}, {3072, 3072}, {3840, 3840},
+	{4096, 4096}, {4320, 4320}, {5120, 5120}, {6144, 6144}, {7680, 7680},
 };
 
 bool IsResolutionSeparator(int index)
@@ -328,15 +352,72 @@ struct WindowSettings {
 	bool hasPositionAndSize = false;
 	int left = CW_USEDEFAULT;
 	int top = CW_USEDEFAULT;
-	int width = kDefaultWindowWidth;
-	int height = kDefaultWindowHeight;
+	int width = 0;
+	int height = 0;
 	BYTE alpha = 255;
 };
 
 WindowSettings g_windowSettings{};
 
+void ResetCamera()
+{
+	g_len = kDefaultLen;
+	g_ang1 = kDefaultAng1;
+	g_ang2 = kDefaultAng2;
+	g_cenx = kDefaultCenX;
+	g_ceny = kDefaultCenY;
+	g_cenz = kDefaultCenZ;
+}
+
+void ResetSessionStatistics()
+{
+	g_totalPresentedFrames = 0;
+	g_activeSeconds = 0.0;
+	g_maxFps = 0.0;
+	g_fps = 0.0;
+	if (g_fpsFrequency.QuadPart > 0) {
+		QueryPerformanceCounter(&g_fpsSampleStart);
+		g_activeSegmentStart = g_fpsSampleStart;
+		g_lastFrameTime = g_fpsSampleStart;
+		g_fpsFrameCount = 0;
+	}
+}
+
+void ResetRuntimePreferencesToDefaults()
+{
+	g_windowSettings = WindowSettings{};
+	g_frameRateLimit = 0;
+	g_vsyncEnabled = false;
+	g_resolutionWidth = kDefaultResolutionWidth;
+	g_resolutionHeight = kDefaultResolutionHeight;
+	g_alpha = 255;
+	g_askUserWhenConflict = 0;
+	g_maxFpsHistory = 0.0;
+	g_maxFpsBenchmarkHistory = 0.0;
+	g_benchmarkAutoPausedByMinimize = false;
+	g_firstRunPending = false;
+}
+
 DECLSPEC_NOINLINE void LoadWindowSettings()
 {
+	ResetRuntimePreferencesToDefaults();
+
+	WCHAR compName[64]{};
+	DWORD compSize = 63;
+	GetComputerNameW(compName, &compSize);
+
+	if (g_benchmarkMode) {
+		std::wstring benchmarkHistFps;
+		if (ReadIniStr(L"Benchmark", std::format(L"Computer-{}_MaxFps", compName).c_str(), benchmarkHistFps, L"0.0")) {
+			try {
+				g_maxFpsBenchmarkHistory = std::stod(benchmarkHistFps);
+			} catch (...) {
+				g_maxFpsBenchmarkHistory = 0.0;
+			}
+		}
+		return;
+	}
+
 	int left = 0, top = 0, width = 0, height = 0, opacity = 255;
 	const bool haveLeft = ReadIniInt(L"Window", L"Left", left);
 	const bool haveTop = ReadIniInt(L"Window", L"Top", top);
@@ -357,6 +438,13 @@ DECLSPEC_NOINLINE void LoadWindowSettings()
 		g_windowSettings.alpha = static_cast<BYTE>(opacity);
 	}
 
+	int isFirstRun = 1;
+	if (ReadIniInt(L"Settings", L"IsFirstRun", isFirstRun)) {
+		g_firstRunPending = isFirstRun != 0;
+	} else {
+		g_firstRunPending = true;
+	}
+
 	ReadIniInt(L"Window", L"AskUserWhenConflict", g_askUserWhenConflict);
 
 	int frameRateLimit = static_cast<int>(g_frameRateLimit);
@@ -371,27 +459,33 @@ DECLSPEC_NOINLINE void LoadWindowSettings()
 	}
 
 	std::wstring resolution;
-	if (ReadIniStr(L"Settings", L"Resolution", resolution) &&
-		resolution != L"Any" && !resolution.empty()) {
-		int width = 0;
-		int height = 0;
-		if (swscanf_s(resolution.c_str(), L"%dx%d", &width, &height) == 2 &&
-			FindResolutionOption(width, height) != 0) {
-			g_resolutionWidth = width;
-			g_resolutionHeight = height;
+	if (ReadIniStr(L"Settings", L"Resolution", resolution) && !resolution.empty()) {
+		if (resolution == L"Any") {
+			g_resolutionWidth = 0;
+			g_resolutionHeight = 0;
+		} else {
+			int parsedWidth = 0;
+			int parsedHeight = 0;
+			if (swscanf_s(resolution.c_str(), L"%dx%d", &parsedWidth, &parsedHeight) == 2 &&
+				FindResolutionOption(parsedWidth, parsedHeight) != 0) {
+				g_resolutionWidth = parsedWidth;
+				g_resolutionHeight = parsedHeight;
+			}
 		}
 	}
 
-	WCHAR compName[64]{};
-	DWORD compSize = 63;
-	GetComputerNameW(compName, &compSize);
 	std::wstring histFpsMax;
-	if (ReadIniStr(L"Statistics", std::format(L"Computer-{}_MaxFps", compName).c_str(), histFpsMax, L"0.0")) try {
-		g_maxFpsHistory = std::stod(histFpsMax);
-	} catch (...) {};
+	if (ReadIniStr(L"Statistics", std::format(L"Computer-{}_MaxFps", compName).c_str(), histFpsMax, L"0.0")) {
+		try {
+			g_maxFpsHistory = std::stod(histFpsMax);
+		} catch (...) {
+			g_maxFpsHistory = 0.0;
+		}
+	}
 
 	g_alpha = g_windowSettings.alpha;
 }
+
 
 bool GetNormalWindowRect(HWND hwnd, RECT& rect)
 {
@@ -407,7 +501,7 @@ bool GetNormalWindowRect(HWND hwnd, RECT& rect)
 
 void SaveWindowSettings()
 {
-	if (!g_hwnd) {
+	if (!g_hwnd || g_benchmarkMode || g_iniDeletedByReset) {
 		return;
 	}
 
@@ -430,6 +524,7 @@ void SaveWindowSettings()
 	} else {
 		WriteIniStr(L"Settings", L"Resolution", L"Any");
 	}
+	WriteIniInt(L"Settings", L"IsFirstRun", g_firstRunPending ? 1 : 0);
 
 	WCHAR compName[64]{};
 	DWORD compSize = 63;
@@ -438,6 +533,46 @@ void SaveWindowSettings()
 	if (g_maxFpsHistory < g_maxFps) g_maxFpsHistory = g_maxFps;
 	WriteIniStr(L"Statistics", std::format(L"Computer-{}_MaxFps", compName).c_str(), std::to_wstring(g_maxFpsHistory).c_str());
 }
+
+void SaveBenchmarkStatistics()
+{
+	if (!g_benchmarkMode) {
+		return;
+	}
+
+	WCHAR compName[64]{};
+	DWORD compSize = 63;
+	GetComputerNameW(compName, &compSize);
+
+	if (g_maxFpsBenchmarkHistory < g_maxFps) {
+		g_maxFpsBenchmarkHistory = g_maxFps;
+	}
+	WriteIniStr(L"Benchmark", std::format(L"Computer-{}_MaxFps", compName).c_str(),
+		std::to_wstring(g_maxFpsBenchmarkHistory));
+}
+
+void MarkIniDirty()
+{
+	g_iniDeletedByReset = false;
+}
+
+bool DeleteUserIniFile()
+{
+	const std::wstring iniPath = GetIniPath();
+	if (DeleteFileW(iniPath.c_str())) {
+		return true;
+	}
+	return GetLastError() == ERROR_FILE_NOT_FOUND;
+}
+
+void ResetUserPreferences()
+{
+	ResetRuntimePreferencesToDefaults();
+	ResetSessionStatistics();
+	g_firstRunPending = true;
+	g_iniDeletedByReset = true;
+}
+
 
 void ClampSavedWindowRectToMonitor(RECT& rect)
 {
@@ -494,14 +629,15 @@ void UpdateWindowTitle(int clientWidth, int clientHeight)
 		? static_cast<unsigned>(std::lround(g_fps))
 		: 0u;
 
-	const wchar_t* modifiedPrefix = (g_kernel != g_defaultKernel) ? L"* " : L"";
+	const wchar_t* benchmarkPrefix = g_benchmarkMode ? L"[Benchmark] " : L"";
+	const wchar_t* modifiedPrefix = (!g_benchmarkMode && g_kernel != g_defaultKernel) ? L"* " : L"";
 	std::wstring title;
 	if (g_paused) {
-		title = std::format(L"{}{} - Paused - {} FPS @ {}x{}",
-			modifiedPrefix, kWindowTitle, displayedFps, clientWidth, clientHeight);
+		title = std::format(L"{}{}{} - Paused - {} FPS @ {}x{}",
+			benchmarkPrefix, modifiedPrefix, kWindowTitle, displayedFps, clientWidth, clientHeight);
 	} else {
-		title = std::format(L"{}{} - {} FPS @ {}x{}",
-			modifiedPrefix, kWindowTitle, displayedFps, clientWidth, clientHeight);
+		title = std::format(L"{}{}{} - {} FPS @ {}x{}",
+			benchmarkPrefix, modifiedPrefix, kWindowTitle, displayedFps, clientWidth, clientHeight);
 	}
 
 	SetWindowTextW(g_hwnd, title.c_str());
@@ -645,6 +781,8 @@ void SetMainWindowAlpha(BYTE alpha)
 		SetLayeredWindowAttributes(g_hwnd, 0, g_alpha, LWA_ALPHA);
 	}
 }
+
+bool LaunchSelf(const std::wstring& arguments, bool suspended, PROCESS_INFORMATION& processInfo);
 
 bool SaveKernelSourceToDisk(const std::string& source, std::wstring* errorText = nullptr)
 {
@@ -1171,18 +1309,14 @@ void UpdateRenderViewport()
 	RECT client{};
 	GetClientRect(g_hwnd, &client);
 
-	const UINT width = static_cast<UINT>(std::max<LONG>(1, client.right - client.left));
-	const UINT height = static_cast<UINT>(std::max<LONG>(1, client.bottom - client.top));
-	const UINT side = std::max<UINT>(1, std::min(width, height));
-
-	g_renderWidth = side;
-	g_renderHeight = side;
+	g_renderWidth = static_cast<UINT>(std::max<LONG>(1, client.right - client.left));
+	g_renderHeight = static_cast<UINT>(std::max<LONG>(1, client.bottom - client.top));
 
 	D3D11_VIEWPORT viewport{};
-	viewport.TopLeftX = 0.5f * static_cast<float>(width - side);
-	viewport.TopLeftY = 0.5f * static_cast<float>(height - side);
-	viewport.Width = static_cast<float>(side);
-	viewport.Height = static_cast<float>(side);
+	viewport.TopLeftX = 0.0f;
+	viewport.TopLeftY = 0.0f;
+	viewport.Width = static_cast<float>(g_renderWidth);
+	viewport.Height = static_cast<float>(g_renderHeight);
 	viewport.MinDepth = 0.0f;
 	viewport.MaxDepth = 1.0f;
 	g_context->RSSetViewports(1, &viewport);
@@ -1323,7 +1457,7 @@ bool InitD3D()
 	}
 
 	g_defaultKernel = GetDefaultKernelSource();
-	g_kernel = GetKernelSource();
+	g_kernel = g_benchmarkMode ? g_defaultKernel : GetKernelSource();
 	if (!CompileKernelShader(g_kernel, true)) {
 		g_kernel = g_defaultKernel;
 		if (!CompileKernelShader(g_kernel, true)) {
@@ -1360,7 +1494,7 @@ void UpdateCameraBuffer()
 
 	const float cx = static_cast<float>(g_renderWidth);
 	const float cy = static_cast<float>(g_renderHeight);
-	const float sum = std::max(1.0f, cx + cy);
+	const float shortSide = std::max(1.0f, std::min(cx, cy));
 
 	CameraConstants constants{};
 	const float cos1 = std::cos(g_ang1);
@@ -1368,8 +1502,8 @@ void UpdateCameraBuffer()
 	const float cos2 = std::cos(g_ang2);
 	const float sin2 = std::sin(g_ang2);
 
-	constants.x = cx * 2.0f / sum;
-	constants.y = cy * 2.0f / sum;
+	constants.x = cx / shortSide;
+	constants.y = cy / shortSide;
 	constants.len = g_len;
 
 	constants.origin[0] = g_len * cos1 * cos2 + g_cenx;
@@ -1945,6 +2079,7 @@ void ApplySettingsDialogFont(HWND hwnd)
 		g_settingsResolutionCombo,
 		g_settingsOk,
 		g_settingsCancel,
+		g_settingsReset,
 	};
 	for (HWND control : controls) {
 		if (control) {
@@ -2013,6 +2148,13 @@ void LayoutSettingsDialog(HWND hwnd)
 	if (g_settingsCancel) {
 		SetWindowPos(g_settingsCancel, nullptr,
 			std::max(margin, width - margin - buttonWidth),
+			std::max(margin, height - margin - buttonHeight),
+			buttonWidth, buttonHeight,
+			SWP_NOZORDER);
+	}
+	if (g_settingsReset) {
+		SetWindowPos(g_settingsReset, nullptr,
+			margin,
 			std::max(margin, height - margin - buttonHeight),
 			buttonWidth, buttonHeight,
 			SWP_NOZORDER);
@@ -2089,9 +2231,18 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			instance,
 			nullptr);
 
+		g_settingsReset = CreateWindowExW(
+			0, WC_BUTTONW, L"Reset...",
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+			0, 0, buttonWidth, buttonHeight,
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_RESET)),
+			instance,
+			nullptr);
+
 		if (!g_settingsFpsLabel || !g_settingsFpsEdit || !g_settingsVsyncCheck ||
 			!g_settingsResolutionLabel || !g_settingsResolutionCombo ||
-			!g_settingsOk || !g_settingsCancel) {
+			!g_settingsOk || !g_settingsCancel || !g_settingsReset) {
 			return -1;
 		}
 
@@ -2198,6 +2349,39 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			}
 			return 0;
 
+		case IDC_SETTINGS_RESET: {
+			int user = IDNO;
+			TaskDialog(
+				hwnd,
+				nullptr,
+				L"Reset settings",
+				L"Are you sure you want to reset everything?",
+				L"All preferences and statistics data will be reset to their initial state. Kernel shader file will not be affected.",
+				TDCBF_YES_BUTTON | TDCBF_CANCEL_BUTTON,
+				TD_WARNING_ICON,
+				&user);
+			if (user == IDYES) {
+				if (!DeleteUserIniFile()) {
+					MessageBoxW(hwnd, L"Cannot delete vsbm-windows.ini.", L"Reset settings", MB_OK | MB_ICONERROR);
+					return 0;
+				}
+				ResetUserPreferences();
+				SetMainWindowAlpha(g_alpha);
+				ApplyResolutionStyleAndSize();
+				if (g_hwnd) {
+					centerWindow(g_hwnd, 0);
+				}
+				//DestroyWindow(hwnd);
+				PROCESS_INFORMATION pi{};
+				if (LaunchSelf(L"", false, pi) && pi.hProcess && pi.hThread) {
+					CloseHandle(pi.hThread);
+					CloseHandle(pi.hProcess);
+				}
+				ExitProcess(0);
+			}
+			return 0;
+		}
+
 		case IDC_SETTINGS_OK: {
 			wchar_t buffer[16]{};
 			GetWindowTextW(g_settingsFpsEdit, buffer, static_cast<int>(std::size(buffer)));
@@ -2229,6 +2413,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			}
 
 			ApplyResolutionStyleAndSize();
+			MarkIniDirty();
 			SaveWindowSettings();
 			DestroyWindow(hwnd);
 			return 0;
@@ -2252,6 +2437,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 		g_settingsResolutionCombo = nullptr;
 		g_settingsOk = nullptr;
 		g_settingsCancel = nullptr;
+		g_settingsReset = nullptr;
 		if (g_settingsDialogFont) {
 			DeleteObject(g_settingsDialogFont);
 			g_settingsDialogFont = nullptr;
@@ -2308,7 +2494,7 @@ void OpenSettingsDialog()
 
 	const UINT dpi = GetWindowDpiSafe(g_hwnd);
 	const int width = ScaleForDpi(380, dpi);
-	const int height = ScaleForDpi(250, dpi);
+	const int height = ScaleForDpi(290, dpi);
 
 	g_settingsDialog = CreateWindowExW(
 		0,
@@ -2333,6 +2519,29 @@ void OpenSettingsDialog()
 	SetFocus(g_settingsFpsEdit);
 }
 
+bool DoesUserUsesChinese() {
+	static auto langID = PRIMARYLANGID(GetUserDefaultUILanguage());
+#pragma warning(push)
+#pragma warning(disable: 6287)
+	return langID == LANG_CHINESE ||
+		langID == LANG_CHINESE_SIMPLIFIED ||
+		langID == LANG_CHINESE_TRADITIONAL;
+#pragma warning(pop)
+}
+
+void ShowFirstRunWelcome(HWND hwnd) {
+	TaskDialog(
+		hwnd,
+		nullptr,
+		L"vsbm for Windows",
+		L"Welcome to this application!",
+		DoesUserUsesChinese() ? L"提示：右键单击标题栏或按 Alt + Space 即可显示更多选项或调整渲染分辨率。" :
+		L"Tip: Right-click the title bar or press Alt+Space to show more options or adjust the resolution.",
+		TDCBF_CANCEL_BUTTON | TDCBF_CLOSE_BUTTON,
+		TD_INFORMATION_ICON,
+		nullptr);
+}
+
 void ShowStatistics(HWND hwnd)
 {
 	const double activeSeconds = GetActiveSeconds();
@@ -2340,9 +2549,29 @@ void ShowStatistics(HWND hwnd)
 		? static_cast<double>(g_totalPresentedFrames) / activeSeconds
 		: 0.0;
 
-	const double historicalMax = std::max(g_maxFpsHistory, g_maxFps);
+	const bool benchmark = g_benchmarkMode;
+	const double historicalMax = benchmark
+		? std::max(g_maxFpsBenchmarkHistory, g_maxFps)
+		: std::max(g_maxFpsHistory, g_maxFps);
 
-	std::wstring text = std::format(
+	std::wstring text;
+	if (benchmark) {
+		text = std::format(
+			L"Total frames rendered: {}\r\n"
+			L"Average frame rate: {:.2f} FPS\r\n"
+			L"Session maximum frame rate: {:.2f} FPS\r\n"
+			L"Historical maximum frame rate (benchmark mode): {:.2f} FPS\r\n",
+			static_cast<unsigned long long>(g_totalPresentedFrames),
+			averageFps,
+			g_maxFps,
+			historicalMax);
+		TaskDialog(hwnd, nullptr, L"Benchmark statistics - vsbm for Windows",
+			L"Benchmark statistics for this session.",
+			text.c_str(), TDCBF_CANCEL_BUTTON, TD_INFORMATION_ICON, nullptr);
+		return;
+	}
+
+	text = std::format(
 		L"Total frames rendered: {}\r\n"
 		L"Average frame rate: {:.2f} FPS\r\n"
 		L"Session maximum frame rate: {:.2f} FPS\r\n"
@@ -2352,9 +2581,9 @@ void ShowStatistics(HWND hwnd)
 		g_maxFps,
 		historicalMax);
 
-	TaskDialog(hwnd, NULL, L"Statistics - vsbm for Windows",
+	TaskDialog(hwnd, nullptr, L"Statistics - vsbm for Windows",
 		L"Rendering statistics since application startup.",
-		text.c_str(), TDCBF_CANCEL_BUTTON, TD_INFORMATION_ICON, NULL);
+		text.c_str(), TDCBF_CANCEL_BUTTON, TD_INFORMATION_ICON, nullptr);
 }
 
 void ReleasePreviewBitmap()
@@ -2590,14 +2819,104 @@ void AddKernelMenuItem(HWND hwnd)
 	}
 
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
-	AppendMenuW(systemMenu, MF_STRING, IDM_KERNEL, L"&Kernel...");
+	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_KERNEL, L"&Kernel...");
+	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_RESET_CAMERA, L"Reset camera");
+	AppendMenuW(systemMenu, MF_STRING, IDM_BENCHMARK_MODE,
+		g_benchmarkMode ? L"Leave benchmark mode" : L"Benchmark mode");
+	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
 	AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_TO_TASKBAR, L"Hide to taskbar");
-	AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_WHILE_WORKING, L"Hide while working");
+	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_HIDE_WHILE_WORKING, L"Hide while working");
+	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
 	AppendMenuW(systemMenu, MF_STRING, IDM_RENDER_PREVIEW, L"&Render preview");
 	AppendMenuW(systemMenu, MF_STRING, IDM_STATISTICS, L"Statistics");
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
-	AppendMenuW(systemMenu, MF_STRING, IDM_SETTINGS, L"&Settings...");
+	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_SETTINGS, L"&Settings...");
 	AppendMenuW(systemMenu, MF_STRING, IDM_HELP, L"&Help...");
+}
+
+
+bool LaunchSelf(const std::wstring& arguments, bool suspended, PROCESS_INFORMATION& processInfo)
+{
+	processInfo = {};
+	std::vector<wchar_t> path(32768, L'\0');
+	const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+	if (length == 0 || length >= path.size()) {
+		return false;
+	}
+
+	std::wstring commandLine = L"-";
+	if (!arguments.empty()) {
+		commandLine += L" ";
+		commandLine += arguments;
+	}
+
+	STARTUPINFOW startupInfo{};
+	startupInfo.cb = sizeof(startupInfo);
+	DWORD creationFlags = CREATE_DEFAULT_ERROR_MODE;
+	if (suspended) {
+		creationFlags |= CREATE_SUSPENDED;
+	}
+
+	return CreateProcessW(
+		path.data(), commandLine.data(), nullptr, nullptr, FALSE, creationFlags,
+		nullptr, nullptr, &startupInfo, &processInfo) != FALSE;
+}
+
+void ResetCameraAndRefresh()
+{
+	if (g_benchmarkMode) {
+		return;
+	}
+	ResetCamera();
+	UpdateWindowTitle();
+}
+
+void StartBenchmarkMode(HWND hwnd)
+{
+	const int user = MessageBoxW(
+		hwnd,
+		L"Switch to benchmark mode? This will reset the current session's statistics data.",
+		L"Benchmark mode",
+		MB_ICONQUESTION | MB_OKCANCEL);
+	if (user != IDOK) {
+		return;
+	}
+
+	PROCESS_INFORMATION pi{};
+	if (!LaunchSelf(L"--benchmark", false, pi) || !pi.hThread || !pi.hProcess) {
+		MessageBoxW(hwnd, L"Cannot start benchmark mode.", L"Benchmark mode", MB_OK | MB_ICONERROR);
+		return;
+	}
+
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
+	DestroyWindow(hwnd);
+}
+
+void LeaveBenchmarkMode(HWND hwnd)
+{
+	if (!g_benchmarkMode || g_benchmarkTransitioning) {
+		return;
+	}
+
+	SetPaused(true);
+	ShowStatistics(hwnd);
+	SaveBenchmarkStatistics();
+
+	PROCESS_INFORMATION pi{};
+	if (!LaunchSelf(L"", true, pi) || !pi.hThread || !pi.hProcess) {
+		MessageBoxW(hwnd,
+			L"Cannot leave benchmark mode because the normal application could not be started.",
+			L"Benchmark mode", MB_OK | MB_ICONERROR);
+		SetPaused(false);
+		return;
+	}
+
+	g_benchmarkTransitioning = true;
+	DestroyWindow(hwnd);
+	ResumeThread(pi.hThread);
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
 }
 
 void UpdateMouseButtonsFromCapture()
@@ -2764,7 +3083,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		return 0;
 
 	case WM_DPICHANGED:
-		if (!IsZoomed(hwnd) && !IsIconic(hwnd)) {
+		if (g_resolutionWidth > 0 && g_resolutionHeight > 0) {
+			ApplyResolutionStyleAndSize();
+		} else if (!IsZoomed(hwnd) && !IsIconic(hwnd)) {
 			const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
 			if (suggested) {
 				SetWindowPos(hwnd, nullptr,
@@ -2775,6 +3096,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 					SWP_NOZORDER | SWP_NOACTIVATE);
 			}
 		}
+		MarkIniDirty();
 		SaveWindowSettings();
 		return 0;
 
@@ -2786,6 +3108,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 	}
 
 	case WM_SIZE:
+		if (g_benchmarkMode) {
+			if (wParam == SIZE_MINIMIZED) {
+				if (!g_paused) {
+					g_benchmarkAutoPausedByMinimize = true;
+					SetPaused(true);
+				}
+			} else if (g_benchmarkAutoPausedByMinimize) {
+				g_benchmarkAutoPausedByMinimize = false;
+				SetPaused(false);
+			}
+		}
+
 		if (g_device && wParam != SIZE_MINIMIZED) {
 			const UINT width = static_cast<UINT>(std::max<LONG>(1, LOWORD(lParam)));
 			const UINT height = static_cast<UINT>(std::max<LONG>(1, HIWORD(lParam)));
@@ -2799,7 +3133,20 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 	case WM_SYSCOMMAND: {
 		const UINT_PTR command = static_cast<UINT_PTR>(wParam);
 		if (command == IDM_KERNEL) {
+			if (g_benchmarkMode) return 0;
 			OpenKernelDialog();
+			return 0;
+		}
+		if (command == IDM_RESET_CAMERA) {
+			ResetCameraAndRefresh();
+			return 0;
+		}
+		if (command == IDM_BENCHMARK_MODE) {
+			if (g_benchmarkMode) {
+				LeaveBenchmarkMode(hwnd);
+			} else {
+				StartBenchmarkMode(hwnd);
+			}
 			return 0;
 		}
 		if (command == IDM_HIDE_TO_TASKBAR) {
@@ -2807,6 +3154,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 			return 0;
 		}
 		if (command == IDM_HIDE_WHILE_WORKING) {
+			if (g_benchmarkMode) return 0;
 			HideWhileWorking();
 			return 0;
 		}
@@ -2819,6 +3167,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 			return 0;
 		}
 		if (command == IDM_SETTINGS) {
+			if (g_benchmarkMode) return 0;
 			OpenSettingsDialog();
 			return 0;
 		}
@@ -2920,6 +3269,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		break;
 
 	case WM_LBUTTONDOWN:
+		if (g_benchmarkMode) return 0;
 		g_leftDown = true;
 		g_mouseMoved = false;
 		g_mouseX = GET_X_LPARAM(lParam);
@@ -2933,6 +3283,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		return 0;
 
 	case WM_RBUTTONDOWN:
+		if (g_benchmarkMode) return 0;
 		g_rightDown = true;
 		g_mouseMoved = false;
 		g_mouseX = GET_X_LPARAM(lParam);
@@ -2946,6 +3297,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		return 0;
 
 	case WM_MOUSEMOVE: {
+		if (g_benchmarkMode) return 0;
 		const int x = GET_X_LPARAM(lParam);
 		const int y = GET_Y_LPARAM(lParam);
 
@@ -2978,6 +3330,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 	}
 
 	case WM_MOUSEWHEEL: {
+		if (g_benchmarkMode) return 0;
 		const short delta = GET_WHEEL_DELTA_WPARAM(wParam);
 		g_len *= std::exp(-0.001f * static_cast<float>(delta));
 		g_len = std::max(0.01f, std::min(g_len, 1000.0f));
@@ -2985,6 +3338,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 	}
 
 	case WM_TOUCH:
+		if (g_benchmarkMode) return 0;
 		HandleTouch(hwnd, lParam);
 		return 0;
 
@@ -3002,6 +3356,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		if (g_hiddenWhileWorking) {
 			return 0;
 		}
+		if (g_benchmarkMode && wParam != VK_SPACE) {
+			return 0;
+		}
 
 		switch (wParam) {
 		case VK_SPACE:
@@ -3014,6 +3371,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 			if (g_alpha < 255) {
 				++g_alpha;
 				SetMainWindowAlpha(g_alpha);
+				MarkIniDirty();
 				SaveWindowSettings();
 			}
 			break;
@@ -3022,6 +3380,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 			if (g_alpha > 0) {
 				--g_alpha;
 				SetMainWindowAlpha(g_alpha);
+				MarkIniDirty();
 				SaveWindowSettings();
 			}
 			break;
@@ -3032,6 +3391,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		return 0;
 
 	case WM_EXITSIZEMOVE:
+		MarkIniDirty();
 		SaveWindowSettings();
 		return 0;
 
@@ -3048,6 +3408,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		break;
 
 	case WM_CLOSE:
+		if (g_benchmarkMode && !g_benchmarkTransitioning) {
+			SetPaused(true);
+			ShowStatistics(hwnd);
+			SaveBenchmarkStatistics();
+		}
 		SaveWindowSettings();
 		RemoveTrayIcon();
 		SetWindowLongPtrW(hwnd, GWL_EXSTYLE, GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & (~static_cast<LONG_PTR>(WS_EX_LAYERED)));
@@ -3157,6 +3522,7 @@ int WINAPI wWinMain(
 		g_gdiplusToken = 0;
 	}
 
+	g_benchmarkMode = lpCmdLine && std::wstring(lpCmdLine) == L"--benchmark";
 	LoadWindowSettings();
 
 	g_taskbarCreatedMessage = RegisterWindowMessageW(L"TaskbarCreated");
@@ -3164,7 +3530,15 @@ int WINAPI wWinMain(
 	LoadApplicationIcons(hInstance);
 	DecryptGlobalStrings();
 
-	if (HWND h = FindWindowW(g_kWindowClass, NULL)) {
+	if (g_benchmarkMode) {
+		g_frameRateLimit = 0;
+		g_vsyncEnabled = false;
+		g_resolutionWidth = kBenchmarkResolutionWidth;
+		g_resolutionHeight = kBenchmarkResolutionHeight;
+		ResetCamera();
+	}
+
+	if (!g_benchmarkMode) if (HWND h = FindWindowW(g_kWindowClass, NULL)) {
 		int user = IDYES;
 		if (g_askUserWhenConflict) 
 			TaskDialog(NULL, hInstance, L"vsbm for Windows", L"It seems that you've running another instance of "
@@ -3200,8 +3574,8 @@ int WINAPI wWinMain(
 
 	int windowX = CW_USEDEFAULT;
 	int windowY = CW_USEDEFAULT;
-	int windowWidth = kDefaultWindowWidth;
-	int windowHeight = kDefaultWindowHeight;
+	int windowWidth = 0;
+	int windowHeight = 0;
 
 	const bool fixedResolution = g_resolutionWidth > 0 && g_resolutionHeight > 0;
 	DWORD windowStyle = WS_OVERLAPPEDWINDOW;
@@ -3227,6 +3601,13 @@ int WINAPI wWinMain(
 
 	if (fixedResolution) {
 		RECT clientRect{0, 0, g_resolutionWidth, g_resolutionHeight};
+		AdjustWindowRectEx(&clientRect, windowStyle, FALSE, WS_EX_LAYERED);
+		windowWidth = clientRect.right - clientRect.left;
+		windowHeight = clientRect.bottom - clientRect.top;
+	} else if (!g_windowSettings.hasPositionAndSize) {
+		// The default resolution mode is unrestricted, but the initial window
+		// should still have a 1024x768 client area.
+		RECT clientRect{0, 0, kDefaultClientWidth, kDefaultClientHeight};
 		AdjustWindowRectEx(&clientRect, windowStyle, FALSE, WS_EX_LAYERED);
 		windowWidth = clientRect.right - clientRect.left;
 		windowHeight = clientRect.bottom - clientRect.top;
@@ -3271,6 +3652,18 @@ int WINAPI wWinMain(
 
 	Render();
 	AddTrayIcon();
+
+	const bool openSettingsOnStartup = !g_benchmarkMode &&
+		((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0);
+	if (!g_benchmarkMode && g_firstRunPending) {
+		ShowFirstRunWelcome(g_hwnd);
+		g_firstRunPending = false;
+		MarkIniDirty();
+		SaveWindowSettings();
+	}
+	if (openSettingsOnStartup) {
+		OpenSettingsDialog();
+	}
 
 	timeBeginPeriod(1);
 
