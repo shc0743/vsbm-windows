@@ -1,33 +1,32 @@
-float kernal(vec3 position) {
+float kernel(float3 position) {
     const int   MAX_ITERATIONS = 5;
     const float ANGLE_SCALE    = 8.0;
     const float RADIUS_POWER   = 8.0;
     const float ESCAPE_RADIUS  = 6.0;
     const float RESULT_BIAS    = 4.0;
 
-    vec3 p = position;
+    float3 p = position;
 
     for (int i = 0; i < MAX_ITERATIONS; ++i) {
         float radius = length(p);
 
         // Convert to spherical coordinates and scale the angles.
-        float angleXY = atan(p.y, p.x) * ANGLE_SCALE;
+        float angleXY = atan2(p.y, p.x) * ANGLE_SCALE;
         float angleZ  = acos(p.z / radius) * ANGLE_SCALE;
 
         // Raise the radius to RADIUS_POWER.
         radius = pow(radius, RADIUS_POWER);
 
         // Transform the point and add the original position.
-        p = vec3(
+        p = float3(
             radius * sin(angleZ) * cos(angleXY),
             radius * sin(angleZ) * sin(angleXY),
             radius * cos(angleZ)
         ) + position;
 
-        if (radius > ESCAPE_RADIUS) {
-            break;
-        }
+        if (radius > ESCAPE_RADIUS) break;
     }
 
     return RESULT_BIAS - dot(p, p);
 }
+

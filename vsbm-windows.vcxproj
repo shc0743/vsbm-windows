@@ -162,9 +162,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="TrustCheck.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
+    <ClInclude Include="TrustCheck.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="vsbm-windows.rc" />

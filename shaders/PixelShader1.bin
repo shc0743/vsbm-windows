@@ -24,3 +24,4 @@ cbuffer Camera : register(b0)
 	float  len;
 	float  _pad3;
 };
+

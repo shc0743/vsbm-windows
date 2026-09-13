@@ -2,6 +2,8 @@
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0A00
 #endif
+#define MyGDIPlusNoGDIPlus 1
+//#define DEV 1
 #include <windows.h>
 #include <windowsx.h>
 #include <commctrl.h>
@@ -12,7 +14,9 @@
 #include <shellapi.h>
 #include <timeapi.h>
 #include <shlwapi.h>
+#ifndef MyGDIPlusNoGDIPlus
 #include <gdiplus.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -27,6 +31,7 @@
 #include <vector>
 #include <format>
 
+#include "TrustCheck.hpp"
 #include "resource.h"
 
 #pragma comment(lib, "d3d11.lib")
@@ -38,7 +43,10 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "Version.lib")
+#ifndef MyGDIPlusNoGDIPlus
 #pragma comment(lib, "gdiplus.lib")
+#endif
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -138,7 +146,9 @@ HWND g_settingsResolutionLabel = nullptr;
 HWND g_settingsResolutionCombo = nullptr;
 int g_settingsLastResolutionIndex = 0;
 HWND g_previewWindow = nullptr;
+#ifndef MyGDIPlusNoGDIPlus
 Gdiplus::Bitmap* g_previewBitmap = nullptr;
+#endif
 IStream* g_previewStream = nullptr;
 ULONG_PTR g_gdiplusToken = 0;
 
@@ -573,6 +583,26 @@ void ResetUserPreferences()
 	g_iniDeletedByReset = true;
 }
 
+std::wstring GetExecutableLocation()
+{
+	auto buffer = std::make_unique<WCHAR[]>(32768);
+	const DWORD length = GetModuleFileNameW(NULL, buffer.get(), 32768);
+	if (length == 0 || length >= MAX_PATH) {
+		return L".";
+	}
+	std::wstring path(buffer.get(), length);
+	return path;
+}
+
+std::wstring GetExecutableDirectory()
+{
+	auto path = GetExecutableLocation();
+	const size_t slash = path.find_last_of(L"\\/");
+	if (slash == std::wstring::npos) {
+		return L".";
+	}
+	return path.substr(0, slash);
+}
 
 void ClampSavedWindowRectToMonitor(RECT& rect)
 {
@@ -619,10 +649,66 @@ SIZE GetClientSizeForWindowRect(HWND hwnd, const RECT& windowRect)
 	return clientSize;
 }
 
+std::wstring QueryVersionString(const std::vector<BYTE>& data, std::wstring_view field)
+{
+	struct LangCp { WORD lang, cp; } *tr = nullptr;
+	UINT cb = 0;
+	if (!::VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation",
+		reinterpret_cast<LPVOID*>(&tr), &cb) || cb < sizeof(*tr))
+		return {};
+
+	for (UINT i = 0; i < cb / sizeof(*tr); ++i)
+	{
+		auto sub = std::format(L"\\StringFileInfo\\{:04X}{:04X}\\{}", tr[i].lang, tr[i].cp, field);
+		LPWSTR p = nullptr; UINT len = 0;
+		if (::VerQueryValueW(data.data(), sub.c_str(),
+			reinterpret_cast<LPVOID*>(&p), &len) && len > 0)
+			return std::wstring(p, len - 1);
+	}
+	return {};
+}
+
+struct AppVersion {
+	bool created{};
+	WORD major{}, minor{}, build{}, revision{};
+};
+
+AppVersion GetSelfVersion() {
+	std::wstring path = GetExecutableLocation();
+
+	DWORD dummy = 0;
+	DWORD size = ::GetFileVersionInfoSizeW(path.c_str(), &dummy);
+	if (size == 0) throw std::runtime_error("no VERSIONINFO resource");
+
+	std::vector<BYTE> data(size);
+	if (!::GetFileVersionInfoW(path.c_str(), 0, size, data.data()))
+		throw std::runtime_error("GetFileVersionInfoW failed");
+
+	AppVersion v;
+	v.created = true;
+
+	VS_FIXEDFILEINFO* ffi = nullptr; UINT ffiLen = 0;
+	if (::VerQueryValueW(data.data(), L"\\", reinterpret_cast<LPVOID*>(&ffi), &ffiLen)
+		&& ffiLen >= sizeof(VS_FIXEDFILEINFO))
+	{
+		v.major = HIWORD(ffi->dwFileVersionMS);
+		v.minor = LOWORD(ffi->dwFileVersionMS);
+		v.build = HIWORD(ffi->dwFileVersionLS);
+		v.revision = LOWORD(ffi->dwFileVersionLS);
+	}
+	return v;
+}
+
 void UpdateWindowTitle(int clientWidth, int clientHeight)
 {
 	if (!g_hwnd) {
 		return;
+	}
+	static AppVersion ver{};
+	static std::wstring vertext;
+	if (!ver.created) {
+		ver = GetSelfVersion();
+		vertext = std::format(L"{}.{}.{}", ver.major, ver.minor, ver.build);
 	}
 
 	const unsigned displayedFps = g_fps > 0.0
@@ -631,15 +717,10 @@ void UpdateWindowTitle(int clientWidth, int clientHeight)
 
 	const wchar_t* benchmarkPrefix = g_benchmarkMode ? L"[Benchmark] " : L"";
 	const wchar_t* modifiedPrefix = (!g_benchmarkMode && g_kernel != g_defaultKernel) ? L"* " : L"";
-	std::wstring title;
-	if (g_paused) {
-		title = std::format(L"{}{}{} - Paused - {} FPS @ {}x{}",
-			benchmarkPrefix, modifiedPrefix, kWindowTitle, displayedFps, clientWidth, clientHeight);
-	} else {
-		title = std::format(L"{}{}{} - {} FPS @ {}x{}",
-			benchmarkPrefix, modifiedPrefix, kWindowTitle, displayedFps, clientWidth, clientHeight);
-	}
-
+	std::wstring title = std::format(L"{}{}{} {} {}- {} FPS @ {}x{}",
+		benchmarkPrefix, modifiedPrefix, kWindowTitle,
+		vertext, (g_paused ? L"- Paused " : L""),
+		displayedFps, clientWidth, clientHeight);
 	SetWindowTextW(g_hwnd, title.c_str());
 }
 
@@ -786,7 +867,7 @@ bool LaunchSelf(const std::wstring& arguments, bool suspended, PROCESS_INFORMATI
 
 bool SaveKernelSourceToDisk(const std::string& source, std::wstring* errorText = nullptr)
 {
-	const std::wstring path = GetExecutableDirectory() + L"\\kernel.glsl";
+	const std::wstring path = GetExecutableDirectory() + L"\\vsbm-windows.hlsl";
 	const std::wstring temporaryPath = path + L".tmp";
 
 	HANDLE file = CreateFileW(
@@ -837,7 +918,7 @@ bool SaveKernelSourceToDisk(const std::string& source, std::wstring* errorText =
 	if (!ok) {
 		DeleteFileW(temporaryPath.c_str());
 		if (errorText) {
-			*errorText = L"Cannot write kernel.glsl. Win32 error " +
+			*errorText = L"Cannot write vsbm-windows.hlsl. Win32 error " +
 				std::to_wstring(writeError) + L".";
 		}
 		return false;
@@ -850,7 +931,7 @@ bool SaveKernelSourceToDisk(const std::string& source, std::wstring* errorText =
 		const DWORD moveError = GetLastError();
 		DeleteFileW(temporaryPath.c_str());
 		if (errorText) {
-			*errorText = L"Cannot replace kernel.glsl. Win32 error " +
+			*errorText = L"Cannot replace vsbm-windows.hlsl. Win32 error " +
 				std::to_wstring(moveError) + L".";
 		}
 		return false;
@@ -1096,45 +1177,6 @@ bool ReplaceAll(std::string& value, const std::string& from, const std::string& 
 	return changed;
 }
 
-std::string TranslateKernelGLSLToHLSL(std::string source)
-{
-	// Strip a few GLSL declarations that have no HLSL equivalent/meaning here.
-	ReplaceAll(source, "#version 100", "");
-	ReplaceAll(source, "precision highp float;", "");
-	ReplaceAll(source, "precision mediump float;", "");
-	ReplaceAll(source, "precision lowp float;", "");
-
-	ReplaceAll(source, "vec2", "float2");
-	ReplaceAll(source, "vec3", "float3");
-	ReplaceAll(source, "vec4", "float4");
-	ReplaceAll(source, "mat2", "float2x2");
-	ReplaceAll(source, "mat3", "float3x3");
-	ReplaceAll(source, "mat4", "float4x4");
-
-	ReplaceAll(source, "atan(", "atan2(");
-	ReplaceAll(source, "mix(", "lerp(");
-	ReplaceAll(source, "fract(", "frac(");
-	ReplaceAll(source, "discard;", "discard;");
-
-	return source;
-}
-
-std::wstring GetExecutableDirectory()
-{
-	wchar_t buffer[MAX_PATH]{};
-	const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
-	if (length == 0 || length >= MAX_PATH) {
-		return L".";
-	}
-	std::wstring path(buffer, length);
-	const size_t slash = path.find_last_of(L"\\/");
-	if (slash == std::wstring::npos) {
-		return L".";
-	}
-	return path.substr(0, slash);
-}
-
-
 std::string NormalizeNewlinesToLF(const std::string& input)
 {
 	std::string output;
@@ -1164,7 +1206,7 @@ std::string GetDefaultKernelSource()
 
 std::string GetKernelSource()
 {
-	const std::wstring path = GetExecutableDirectory() + L"\\kernel.glsl";
+	const std::wstring path = GetExecutableDirectory() + L"\\vsbm-windows.hlsl";
 	std::string loaded = LoadTextFile(path);
 	if (!loaded.empty()) {
 		return NormalizeNewlinesToLF(loaded);
@@ -1178,8 +1220,7 @@ std::string BuildPixelShaderSource(const std::string& kernelSource)
 	std::string tmp, result;
 	LoadResToString(IDR_BIN_PIXELSHADER1, L"BIN", result, 0);
 	LoadResToString(IDR_BIN_PIXELSHADER2, L"BIN", tmp, 0);
-	result += TranslateKernelGLSLToHLSL(kernelSource);
-	result += "\n";
+	result += (kernelSource);
 	result += tmp;
 	return result;
 }
@@ -1915,7 +1956,7 @@ LRESULT CALLBACK KernelDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 				if (!SaveKernelSourceToDisk(newKernel, &saveError)) {
 					MessageBoxW(
 						hwnd,
-						(L"Kernel was compiled, but saving kernel.glsl failed.\r\n\r\n" + saveError).c_str(),
+						(L"Kernel was compiled, but saving vsbm-windows.hlsl failed.\r\n\r\n" + saveError).c_str(),
 						L"Kernel Save Error",
 						MB_OK | MB_ICONERROR);
 					return 0;
@@ -1935,11 +1976,11 @@ LRESULT CALLBACK KernelDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 			SetWindowTextW(g_kernelDialogEdit, resetText.c_str());
 			SetFocus(g_kernelDialogEdit);
 
-			const std::wstring kernelPath = GetExecutableDirectory() + L"\\kernel.glsl";
+			const std::wstring kernelPath = GetExecutableDirectory() + L"\\vsbm-windows.hlsl";
 			if (!DeleteFileW(kernelPath.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND) {
 				MessageBoxW(
 					hwnd,
-					L"The default Kernel was restored, but kernel.glsl could not be deleted.",
+					L"The default Kernel was restored, but vsbm-windows.hlsl could not be deleted.",
 					L"Kernel Reset",
 					MB_OK | MB_ICONWARNING);
 			}
@@ -2025,7 +2066,7 @@ void OpenKernelDialog()
 	g_kernelDialog = CreateWindowExW(
 		0,
 		kKernelWindowClass,
-		L"Kernel",
+		L"Kernel - HLSL Editor",
 		WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
 		0, 0, width, height,
 		g_hwnd,
@@ -2588,10 +2629,12 @@ void ShowStatistics(HWND hwnd)
 
 void ReleasePreviewBitmap()
 {
+#ifndef MyGDIPlusNoGDIPlus
 	if (g_previewBitmap) {
 		delete g_previewBitmap;
 		g_previewBitmap = nullptr;
 	}
+#endif
 	if (g_previewStream) {
 		g_previewStream->Release();
 		g_previewStream = nullptr;
@@ -2624,15 +2667,19 @@ bool LoadPreviewBitmap()
 		return false;
 	}
 
+#ifndef MyGDIPlusNoGDIPlus
 	Gdiplus::Bitmap* bitmap = Gdiplus::Bitmap::FromStream(stream, FALSE);
 	if (!bitmap || bitmap->GetLastStatus() != Gdiplus::Ok) {
 		delete bitmap;
 		stream->Release();
 		return false;
 	}
+#endif
 
 	g_previewStream = stream;
+#ifndef MyGDIPlusNoGDIPlus
 	g_previewBitmap = bitmap;
+#endif
 	return true;
 }
 
@@ -2667,6 +2714,7 @@ LRESULT CALLBACK RenderPreviewProc(HWND hwnd, UINT message, WPARAM wParam, LPARA
 		GetClientRect(hwnd, &client);
 		FillRect(hdc, &client, reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
 
+#ifndef MyGDIPlusNoGDIPlus
 		if (g_previewBitmap) {
 			const int clientWidth = client.right - client.left;
 			const int clientHeight = client.bottom - client.top;
@@ -2690,6 +2738,7 @@ LRESULT CALLBACK RenderPreviewProc(HWND hwnd, UINT message, WPARAM wParam, LPARA
 					drawHeight);
 			}
 		}
+#endif
 
 		EndPaint(hwnd, &paint);
 		return 0;
@@ -2764,8 +2813,13 @@ void OpenRenderPreview()
 		return;
 	}
 
+#ifndef MyGDIPlusNoGDIPlus
 	int clientWidth = static_cast<int>(g_previewBitmap->GetWidth());
 	int clientHeight = static_cast<int>(g_previewBitmap->GetHeight());
+#else
+	int clientWidth = 100;
+	int clientHeight = 100;
+#endif
 
 	// Cap the initial window to 80% of the monitor work area so a large bitmap still opens on screen.
 	const HMONITOR monitor = MonitorFromWindow(g_hwnd, MONITOR_DEFAULTTONEAREST);
@@ -3511,16 +3565,26 @@ DECLSPEC_NOINLINE static void DecryptGlobalStrings() {
 	}
 }
 
+#include "./sig.txt"
+
 int WINAPI wWinMain(
 	_In_ HINSTANCE hInstance,
 	_In_opt_ HINSTANCE hPrevInstance,
 	_In_ LPWSTR lpCmdLine,
 	_In_ int nShowCmd
 ) {
+#ifndef DEV
+	if (int r = SafeCheck(RootCrtDer, sizeof(RootCrtDer), true)) {
+		return r;
+	}
+#endif
+
+#ifndef MyGDIPlusNoGDIPlus
 	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
 	if (Gdiplus::GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, nullptr) != Gdiplus::Ok) {
 		g_gdiplusToken = 0;
 	}
+#endif
 
 	g_benchmarkMode = lpCmdLine && std::wstring(lpCmdLine) == L"--benchmark";
 	LoadWindowSettings();
@@ -3689,7 +3753,9 @@ int WINAPI wWinMain(
 	UnregisterClassW(g_kWindowClass, hInstance);
 	DestroyApplicationIcons();
 	if (g_gdiplusToken) {
+#ifndef MyGDIPlusNoGDIPlus
 		Gdiplus::GdiplusShutdown(g_gdiplusToken);
+#endif
 	}
 	return static_cast<int>(message.wParam);
 }

@@ -13,7 +13,7 @@ float refineCrossingDistance(
     for (int i = 0; i < SOLVER; ++i)
     {
         dMid = dNear * 0.5 + dFar * 0.5;
-        float fieldMid = kernal(rayOrigin + rayDirection * dMid);
+        float fieldMid = kernel(rayOrigin + rayDirection * dMid);
 
         if (fieldMid > 0.0)
         {
@@ -38,13 +38,13 @@ float4 main(PSInput input) : SV_Target
     const float rayStep = stepSize * len;
 
     // Sample the field at the first step and at the ray origin.
-    float fieldPrev = kernal(origin + input.dir * rayStep);
-    float fieldPrevPrev = kernal(origin);
+    float fieldPrev = kernel(origin + input.dir * rayStep);
+    float fieldPrevPrev = kernel(origin);
 
     for (int step = 2; step < 1002; ++step)
     {
         float3 samplePosition = origin + input.dir * (rayStep * (float)step);
-        float fieldCurrent = kernal(samplePosition);
+        float fieldCurrent = kernel(samplePosition);
 
         // Case 1: negative-to-positive sign change between the previous and current step.
         if (fieldCurrent > 0.0 && fieldPrev < 0.0)
@@ -71,8 +71,8 @@ float4 main(PSInput input) : SV_Target
             float distanceA = rayStep * ((float)(step - 2) + 2.0 * M_L);
             float distanceB = rayStep * ((float)(step - 2) + 2.0 * M_R);
             float distanceC = rayStep * (float)step;
-            float fieldA = kernal(origin + input.dir * distanceA);
-            float fieldB = kernal(origin + input.dir * distanceB);
+            float fieldA = kernel(origin + input.dir * distanceA);
+            float fieldB = kernel(origin + input.dir * distanceB);
 
             for (int i = 0; i < MAXR; ++i)
             {
@@ -82,7 +82,7 @@ float4 main(PSInput input) : SV_Target
                     distanceB = distanceA;
                     distanceA = distanceC * M_L + baseDistance * M_R;
                     fieldB = fieldA;
-                    fieldA = kernal(origin + input.dir * distanceA);
+                    fieldA = kernel(origin + input.dir * distanceA);
                 }
                 else
                 {
@@ -90,7 +90,7 @@ float4 main(PSInput input) : SV_Target
                     distanceA = distanceB;
                     distanceB = distanceC * M_R + baseDistance * M_L;
                     fieldA = fieldB;
-                    fieldB = kernal(origin + input.dir * distanceB);
+                    fieldB = kernel(origin + input.dir * distanceB);
                 }
             }
 
@@ -140,12 +140,12 @@ float4 main(PSInput input) : SV_Target
         // Estimate the surface normal by central differences of the field.
         float3 normal;
         const float normalOffset = 0.00025;
-        normal.x = kernal(hitPosition - right * (hitDistance * normalOffset)) -
-                   kernal(hitPosition + right * (hitDistance * normalOffset));
-        normal.y = kernal(hitPosition - up * (hitDistance * normalOffset)) -
-                   kernal(hitPosition + up * (hitDistance * normalOffset));
-        normal.z = kernal(hitPosition + forward * (hitDistance * normalOffset)) -
-                   kernal(hitPosition - forward * (hitDistance * normalOffset));
+        normal.x = kernel(hitPosition - right * (hitDistance * normalOffset)) -
+                   kernel(hitPosition + right * (hitDistance * normalOffset));
+        normal.y = kernel(hitPosition - up * (hitDistance * normalOffset)) -
+                   kernel(hitPosition + up * (hitDistance * normalOffset));
+        normal.z = kernel(hitPosition + forward * (hitDistance * normalOffset)) -
+                   kernel(hitPosition - forward * (hitDistance * normalOffset));
         float normalLengthSquared = dot(normal, normal);
         normal *= 1.0 / sqrt(normalLengthSquared);
 
