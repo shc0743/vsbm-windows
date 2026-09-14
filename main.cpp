@@ -96,15 +96,16 @@ constexpr wchar_t kKernelWindowClass[] = L"D3D11RaymarchKernelWindow";
 constexpr wchar_t kSettingsWindowClass[] = L"D3D11RaymarchSettingsWindow";
 constexpr wchar_t kPreviewWindowClass[] = L"D3D11RaymarchPreviewWindow";
 constexpr int IDC_KERNEL_EDIT = 2001;
-constexpr int IDC_KERNEL_APPLY = 2002;
-constexpr int IDC_KERNEL_CANCEL = 2003;
+constexpr int IDC_KERNEL_APPLY = IDOK;
+constexpr int IDC_KERNEL_CANCEL = IDCANCEL;
 constexpr int IDC_KERNEL_RESET = 2004;
 constexpr int IDC_SETTINGS_FPS = 2201;
 constexpr int IDC_SETTINGS_VSYNC = 2202;
-constexpr int IDC_SETTINGS_OK = 2203;
-constexpr int IDC_SETTINGS_CANCEL = 2204;
+constexpr int IDC_SETTINGS_OK = IDOK;
+constexpr int IDC_SETTINGS_CANCEL = IDCANCEL;
 constexpr int IDC_SETTINGS_RESOLUTION = 2205;
 constexpr int IDC_SETTINGS_RESET = 2206;
+constexpr int IDC_SETTINGS_ALLOW_ONLY_ONE_INSTANCE = 2207;
 
 struct alignas(16) CameraConstants {
 	float right[3];
@@ -144,6 +145,8 @@ HWND g_settingsCancel = nullptr;
 HWND g_settingsReset = nullptr;
 HWND g_settingsResolutionLabel = nullptr;
 HWND g_settingsResolutionCombo = nullptr;
+HWND g_settingsAllowOnlyOneInstanceCheck = nullptr;
+HWND g_settingsAllowOnlyOneInstanceWarning = nullptr;
 int g_settingsLastResolutionIndex = 0;
 HWND g_previewWindow = nullptr;
 #ifndef MyGDIPlusNoGDIPlus
@@ -214,6 +217,7 @@ double g_activeSeconds = 0.0;
 
 UINT g_frameRateLimit = 0;
 bool g_vsyncEnabled = false;
+bool g_allowOnlyOneInstance = true;
 int g_resolutionWidth = kDefaultResolutionWidth;
 int g_resolutionHeight = kDefaultResolutionHeight;
 bool g_occluded = false;
@@ -399,6 +403,7 @@ void ResetRuntimePreferencesToDefaults()
 	g_windowSettings = WindowSettings{};
 	g_frameRateLimit = 0;
 	g_vsyncEnabled = false;
+	g_allowOnlyOneInstance = true;
 	g_resolutionWidth = kDefaultResolutionWidth;
 	g_resolutionHeight = kDefaultResolutionHeight;
 	g_alpha = 255;
@@ -469,6 +474,11 @@ DECLSPEC_NOINLINE void LoadWindowSettings()
 		g_vsyncEnabled = vsyncEnabled != 0;
 	}
 
+	int allowOnlyOneInstance = g_allowOnlyOneInstance ? 1 : 0;
+	if (ReadIniInt(L"Settings", L"AllowOnlyOneInstance", allowOnlyOneInstance)) {
+		g_allowOnlyOneInstance = allowOnlyOneInstance != 0;
+	}
+
 	std::wstring resolution;
 	if (ReadIniStr(L"Settings", L"Resolution", resolution) && !resolution.empty()) {
 		if (resolution == L"Any") {
@@ -529,6 +539,7 @@ void SaveWindowSettings()
 
 	WriteIniInt(L"Settings", L"FrameRateLimit", static_cast<int>(g_frameRateLimit));
 	WriteIniInt(L"Settings", L"VsyncEnabled", g_vsyncEnabled ? 1 : 0);
+	WriteIniInt(L"Settings", L"AllowOnlyOneInstance", g_allowOnlyOneInstance ? 1 : 0);
 	if (g_resolutionWidth > 0 && g_resolutionHeight > 0) {
 		WriteIniStr(L"Settings", L"Resolution",
 			std::format(L"{}x{}", g_resolutionWidth, g_resolutionHeight));
@@ -2126,6 +2137,8 @@ void ApplySettingsDialogFont(HWND hwnd)
 		g_settingsVsyncCheck,
 		g_settingsResolutionLabel,
 		g_settingsResolutionCombo,
+		g_settingsAllowOnlyOneInstanceCheck,
+		g_settingsAllowOnlyOneInstanceWarning,
 		g_settingsOk,
 		g_settingsCancel,
 		g_settingsReset,
@@ -2185,6 +2198,18 @@ void LayoutSettingsDialog(HWND hwnd)
 		SetWindowPos(g_settingsResolutionCombo, nullptr,
 			margin + ScaleForDpi(70, dpi) + ScaleForDpi(8, dpi), ScaleForDpi(118, dpi),
 			ScaleForDpi(200, dpi), rowHeight,
+			SWP_NOZORDER);
+	}
+	if (g_settingsAllowOnlyOneInstanceCheck) {
+		SetWindowPos(g_settingsAllowOnlyOneInstanceCheck, nullptr,
+			margin, ScaleForDpi(152, dpi),
+			std::max(1, width - margin * 2), rowHeight,
+			SWP_NOZORDER);
+	}
+	if (g_settingsAllowOnlyOneInstanceWarning) {
+		SetWindowPos(g_settingsAllowOnlyOneInstanceWarning, nullptr,
+			margin, ScaleForDpi(180, dpi),
+			std::max(1, width - margin * 2), ScaleForDpi(34, dpi),
 			SWP_NOZORDER);
 	}
 	if (g_settingsOk) {
@@ -2262,6 +2287,21 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			instance,
 			nullptr);
 
+		g_settingsAllowOnlyOneInstanceCheck = CreateWindowExW(
+			0, WC_BUTTONW, L"Allow only one instance",
+			WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+			0, 0, ScaleForDpi(280, dpi), rowHeight,
+			hwnd,
+			reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SETTINGS_ALLOW_ONLY_ONE_INSTANCE)),
+			instance,
+			nullptr);
+
+		g_settingsAllowOnlyOneInstanceWarning = CreateWindowExW(
+			0, WC_STATICW, L"Warning: Running multiple instances may seriously\nstress your hardware!",
+			WS_CHILD | WS_VISIBLE,
+			0, 0, ScaleForDpi(340, dpi), ScaleForDpi(34, dpi),
+			hwnd, nullptr, instance, nullptr);
+
 		g_settingsOk = CreateWindowExW(
 			0, WC_BUTTONW, L"&OK",
 			WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
@@ -2291,12 +2331,14 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 
 		if (!g_settingsFpsLabel || !g_settingsFpsEdit || !g_settingsVsyncCheck ||
 			!g_settingsResolutionLabel || !g_settingsResolutionCombo ||
+			!g_settingsAllowOnlyOneInstanceCheck || !g_settingsAllowOnlyOneInstanceWarning ||
 			!g_settingsOk || !g_settingsCancel || !g_settingsReset) {
 			return -1;
 		}
 
 		SetWindowTextW(g_settingsFpsEdit, std::format(L"{}", g_frameRateLimit).c_str());
 		Button_SetCheck(g_settingsVsyncCheck, g_vsyncEnabled ? BST_CHECKED : BST_UNCHECKED);
+		Button_SetCheck(g_settingsAllowOnlyOneInstanceCheck, g_allowOnlyOneInstance ? BST_CHECKED : BST_UNCHECKED);
 
 		for (int i = 0; i < static_cast<int>(std::size(kResolutionOptions)); ++i) {
 			wchar_t optionLabel[32]{};
@@ -2449,6 +2491,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 
 			g_frameRateLimit = static_cast<UINT>(parsed);
 			g_vsyncEnabled = Button_GetCheck(g_settingsVsyncCheck) == BST_CHECKED;
+			g_allowOnlyOneInstance = Button_GetCheck(g_settingsAllowOnlyOneInstanceCheck) == BST_CHECKED;
 
 			const int resolutionIndex = static_cast<int>(
 				SendMessageW(g_settingsResolutionCombo, CB_GETCURSEL, 0, 0));
@@ -2484,6 +2527,8 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 		g_settingsVsyncCheck = nullptr;
 		g_settingsResolutionLabel = nullptr;
 		g_settingsResolutionCombo = nullptr;
+		g_settingsAllowOnlyOneInstanceCheck = nullptr;
+		g_settingsAllowOnlyOneInstanceWarning = nullptr;
 		g_settingsOk = nullptr;
 		g_settingsCancel = nullptr;
 		g_settingsReset = nullptr;
@@ -2543,7 +2588,7 @@ void OpenSettingsDialog()
 
 	const UINT dpi = GetWindowDpiSafe(g_hwnd);
 	const int width = ScaleForDpi(380, dpi);
-	const int height = ScaleForDpi(290, dpi);
+	const int height = ScaleForDpi(320, dpi);
 
 	g_settingsDialog = CreateWindowExW(
 		0,
@@ -2886,17 +2931,17 @@ void AddKernelMenuItem(HWND hwnd)
 
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
 	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_KERNEL, L"&Kernel...");
-	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_RESET_CAMERA, L"Reset camera");
+	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_RESET_CAMERA, L"Reset camera (&F)");
 	AppendMenuW(systemMenu, MF_STRING, IDM_BENCHMARK_MODE,
-		g_benchmarkMode ? L"Leave benchmark mode" : L"Benchmark mode");
+		g_benchmarkMode ? L"Leave &benchmark mode" : L"&Benchmark mode");
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
-	AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_TO_TASKBAR, L"Hide to taskbar");
-	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_HIDE_WHILE_WORKING, L"Hide while working");
+	AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_TO_TASKBAR, L"Hide to t&askbar");
+	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_HIDE_WHILE_WORKING, L"Hide while &working");
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
-	//AppendMenuW(systemMenu, MF_STRING, IDM_RENDER_PREVIEW, L"&Render preview");
-	AppendMenuW(systemMenu, MF_STRING, IDM_STATISTICS, L"Statistics");
+	//AppendMenuW(systemMenu, MF_STRING, IDM_RENDER_PREVIEW, L"Render preview");
+	AppendMenuW(systemMenu, MF_STRING, IDM_STATISTICS, L"S&tatistics");
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
-	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_SETTINGS, L"&Settings...");
+	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_SETTINGS, L"S&ettings...");
 	AppendMenuW(systemMenu, MF_STRING, IDM_HELP, L"&Help...");
 }
 
@@ -3607,6 +3652,8 @@ int WINAPI wWinMain(
 	}
 #endif
 
+	(void)SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+
 	g_benchmarkMode = lpCmdLine && std::wstring(lpCmdLine) == L"--benchmark";
 	LoadWindowSettings();
 
@@ -3623,7 +3670,7 @@ int WINAPI wWinMain(
 		ResetCamera();
 	}
 
-	if (!g_benchmarkMode) if (HWND h = FindWindowW(g_kWindowClass, NULL)) {
+	if (!g_benchmarkMode && g_allowOnlyOneInstance) if (HWND h = FindWindowW(g_kWindowClass, NULL)) {
 		int user = IDYES;
 		if (g_askUserWhenConflict) 
 			TaskDialog(NULL, hInstance, L"vsbm for Windows", L"It seems that you've running another instance of "
