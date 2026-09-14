@@ -54,7 +54,7 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 wchar_t g_kWindowClass[] = L"yvep#iru#Zlqgrzv#^kwwsv=22jlwkxe1frp2vkf3:762yvep0zlqgrzv`";
 wchar_t g_kProductUrl[] = L"nzzvy@55mozn{h4ius5yni6=:95|yhs3}otju}y";
 wchar_t g_kOriginalUrl[] = L"p||x{B77k\x82v}tt6oq|p}j6qw7~{ju";
-wchar_t g_kOnlinePreviewUrl[] = L"dpplo6++n]s*cepdq^qoan_kjpajp*_ki+od_,30/+ro^i)sej`kso+nabo+da]`o+i]opan+ro^i*ljc";
+//wchar_t g_kOnlinePreviewUrl[] = L"dpplo6++n]s*cepdq^qoan_kjpajp*_ki+od_,30/+ro^i)sej`kso+nabo+da]`o+i]opan+ro^i*ljc";
 int g_askUserWhenConflict = 0;
 
 namespace {
@@ -76,7 +76,7 @@ constexpr float kDefaultCenY = 0.0f;
 constexpr float kDefaultCenZ = 0.0f;
 constexpr float kPi = 3.14159265358979323846f;
 
-constexpr double kAutoRotationSpeed = 0.6;
+constexpr float kAutoRotationStep = 0.01f;
 constexpr UINT kMaxFrameRateLimit = 1000000;
 
 constexpr UINT_PTR IDM_KERNEL = 0x1F00;
@@ -1652,10 +1652,9 @@ void PumpRenderFrame()
 		}
 	}
 
-	const double deltaSeconds = std::min(0.05, GetElapsedSeconds(g_lastFrameTime, now));
 	g_lastFrameTime = now;
 	if (!g_paused) {
-		g_ang1 += static_cast<float>(deltaSeconds * kAutoRotationSpeed);
+		g_ang1 += kAutoRotationStep;
 	}
 	g_needsRedraw = false;
 	Render();
@@ -2810,7 +2809,7 @@ void OpenRenderPreview()
 #endif
 	if (u == IDCANCEL) return;
 	else if (u == IDOK) {
-		OpenUrl(g_kOnlinePreviewUrl, g_hwnd);
+		//OpenUrl(g_kOnlinePreviewUrl, g_hwnd);
 		return;
 	}
 
@@ -3580,9 +3579,11 @@ DECLSPEC_NOINLINE static void DecryptGlobalStrings() {
 	for (size_t i = 0, l = std::size(g_kOriginalUrl) - 1; i < l; ++i) {
 		g_kOriginalUrl[i] -= 8;
 	}
+#if 0
 	for (size_t i = 0, l = std::size(g_kOnlinePreviewUrl) - 1; i < l; ++i) {
 		g_kOnlinePreviewUrl[i] -= -4;
 	}
+#endif
 }
 
 #include "./sig.txt"
