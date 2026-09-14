@@ -161,6 +161,7 @@ NOTIFYICONDATAW g_trayIcon{};
 bool g_trayIconAdded = false;
 
 bool g_paused = false;
+bool g_needsRedraw = false;
 bool g_pauseStateBeforeHideToTaskbar = false;
 bool g_hiddenToTaskbar = false;
 bool g_hiddenWhileWorking = false;
@@ -798,7 +799,9 @@ void InitializeFpsCounter()
 
 void RecordPresentedFrame()
 {
-	if (g_fpsFrequency.QuadPart <= 0) {
+	// Frames drawn on demand while paused are not part of the continuous
+	// rendering rate and would otherwise deflate the reported FPS.
+	if (g_fpsFrequency.QuadPart <= 0 || g_paused) {
 		return;
 	}
 
@@ -1324,6 +1327,7 @@ bool CompileKernelShader(const std::string& kernelSource, bool showError)
 	SafeReleaseT(g_pixelShader);
 	g_pixelShader = newShader;
 	g_kernel = kernelSource;
+	g_needsRedraw = true;
 	UpdateWindowTitle();
 	return true;
 }
@@ -1620,7 +1624,9 @@ void WaitForInput(DWORD timeoutMs)
 
 void PumpRenderFrame()
 {
-	if (g_renderFailed || g_paused) {
+	// Pausing only stops the auto-rotation; frames requested by user input are
+	// still rendered so the camera stays responsive while paused.
+	if (g_renderFailed || (g_paused && !g_needsRedraw)) {
 		WaitForInput(INFINITE);
 		return;
 	}
@@ -1648,7 +1654,10 @@ void PumpRenderFrame()
 
 	const double deltaSeconds = std::min(0.05, GetElapsedSeconds(g_lastFrameTime, now));
 	g_lastFrameTime = now;
-	g_ang1 += static_cast<float>(deltaSeconds * kAutoRotationSpeed);
+	if (!g_paused) {
+		g_ang1 += static_cast<float>(deltaSeconds * kAutoRotationSpeed);
+	}
+	g_needsRedraw = false;
 	Render();
 }
 
@@ -2927,6 +2936,7 @@ void ResetCameraAndRefresh()
 	}
 	ResetCamera();
 	UpdateWindowTitle();
+	g_needsRedraw = true;
 }
 
 void StartBenchmarkMode(HWND hwnd)
@@ -3366,6 +3376,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 			g_ang2 += static_cast<float>(y - g_mouseY) * 0.002f;
 			if (x != g_mouseX || y != g_mouseY) {
 				g_mouseMoved = true;
+				g_needsRedraw = true;
 			}
 		}
 
@@ -3381,6 +3392,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 			g_cenz += l * (dx * std::cos(g_ang1) - dy * std::sin(g_ang2) * std::sin(g_ang1));
 			if (x != g_mouseX || y != g_mouseY) {
 				g_mouseMoved = true;
+				g_needsRedraw = true;
 			}
 		}
 
@@ -3394,12 +3406,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		const short delta = GET_WHEEL_DELTA_WPARAM(wParam);
 		g_len *= std::exp(-0.001f * static_cast<float>(delta));
 		g_len = std::max(0.01f, std::min(g_len, 1000.0f));
+		g_needsRedraw = true;
 		return 0;
 	}
 
 	case WM_TOUCH:
 		if (g_benchmarkMode) return 0;
 		HandleTouch(hwnd, lParam);
+		g_needsRedraw = true;
 		return 0;
 
 	case WM_GETMINMAXINFO: {
