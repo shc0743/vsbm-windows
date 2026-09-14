@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 #include <format>
+#include <thread>
 
 #include "TrustCheck.hpp"
 #include "resource.h"
@@ -88,6 +89,10 @@ constexpr UINT_PTR IDM_STATISTICS = 0x1F05;
 constexpr UINT_PTR IDM_RENDER_PREVIEW = 0x1F06;
 constexpr UINT_PTR IDM_RESET_CAMERA = 0x1F07;
 constexpr UINT_PTR IDM_BENCHMARK_MODE = 0x1F08;
+constexpr UINT_PTR IDM_PAUSE_CONTINUE = 0x1F10;
+constexpr UINT_PTR IDM_EXIT_WINDOWS = 0x1F21;
+constexpr UINT_PTR IDM_EXIT_WINDOWS_AFTER = 0x1F22;
+constexpr UINT_PTR IDM_EXIT_APP = 0x1F23;
 
 constexpr UINT_PTR IDM_TRAY_SHOW = 0x2F00;
 constexpr UINT_PTR IDM_TRAY_EXIT = 0x2F01;
@@ -125,7 +130,7 @@ static_assert(sizeof(CameraConstants) == 80, "CameraConstants must be 80 bytes f
 
 struct TouchPoint {
 	bool active = false;
-	DWORD id = 0;
+	UINT32 id = 0;
 	float x = 0.0f;
 	float y = 0.0f;
 };
@@ -198,7 +203,9 @@ bool g_mouseMoved = false;
 int g_mouseX = 0;
 int g_mouseY = 0;
 
-TouchPoint g_touches[2];
+constexpr size_t kMaxTrackedTouches = 16;
+TouchPoint g_touches[kMaxTrackedTouches];
+
 
 // FPS is measured from successfully returned Present calls, so it reflects
 // the actual frame rate of the presented application rather than the rate
@@ -2248,7 +2255,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 		const int buttonHeight = ScaleForDpi(28, dpi);
 
 		g_settingsFpsLabel = CreateWindowExW(
-			0, WC_STATICW, L"Frame rate (0 = unlimited):",
+			0, WC_STATICW, L"&Frame rate (0 = unlimited):",
 			WS_CHILD | WS_VISIBLE,
 			margin, margin, ScaleForDpi(260, dpi), rowHeight,
 			hwnd, nullptr, instance, nullptr);
@@ -2263,7 +2270,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			nullptr);
 
 		g_settingsVsyncCheck = CreateWindowExW(
-			0, WC_BUTTONW, L"Enable &vertical sync",
+			0, WC_BUTTONW, L"Enable &Vertical Sync",
 			WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
 			0, 0, ScaleForDpi(240, dpi), rowHeight,
 			hwnd,
@@ -2272,7 +2279,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			nullptr);
 
 		g_settingsResolutionLabel = CreateWindowExW(
-			0, WC_STATICW, L"Resolution:",
+			0, WC_STATICW, L"&Resolution:",
 			WS_CHILD | WS_VISIBLE,
 			0, 0, ScaleForDpi(260, dpi), rowHeight,
 			hwnd, nullptr, instance, nullptr);
@@ -2288,7 +2295,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			nullptr);
 
 		g_settingsAllowOnlyOneInstanceCheck = CreateWindowExW(
-			0, WC_BUTTONW, L"Allow only one instance",
+			0, WC_BUTTONW, L"&Allow only one instance",
 			WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
 			0, 0, ScaleForDpi(280, dpi), rowHeight,
 			hwnd,
@@ -2321,7 +2328,7 @@ LRESULT CALLBACK SettingsDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 			nullptr);
 
 		g_settingsReset = CreateWindowExW(
-			0, WC_BUTTONW, L"Reset...",
+			0, WC_BUTTONW, L"R&eset...",
 			WS_CHILD | WS_VISIBLE | WS_TABSTOP,
 			0, 0, buttonWidth, buttonHeight,
 			hwnd,
@@ -2935,14 +2942,19 @@ void AddKernelMenuItem(HWND hwnd)
 	AppendMenuW(systemMenu, MF_STRING, IDM_BENCHMARK_MODE,
 		g_benchmarkMode ? L"Leave &benchmark mode" : L"&Benchmark mode");
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
+	AppendMenuW(systemMenu, MF_STRING, IDM_PAUSE_CONTINUE, L"&Pause/Continue");
 	AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_TO_TASKBAR, L"Hide to t&askbar");
 	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_HIDE_WHILE_WORKING, L"Hide while &working");
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
 	//AppendMenuW(systemMenu, MF_STRING, IDM_RENDER_PREVIEW, L"Render preview");
 	AppendMenuW(systemMenu, MF_STRING, IDM_STATISTICS, L"S&tatistics");
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
-	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_SETTINGS, L"S&ettings...");
+	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_SETTINGS, L"Sett&ings...");
 	AppendMenuW(systemMenu, MF_STRING, IDM_HELP, L"&Help...");
+	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
+	AppendMenuW(systemMenu, MF_STRING, IDM_EXIT_WINDOWS, L"Exit Win&dows...");
+	AppendMenuW(systemMenu, MF_STRING, IDM_EXIT_WINDOWS_AFTER, L"Exit Wind&ows After...");
+	AppendMenuW(systemMenu, MF_STRING, IDM_EXIT_APP, L"&Exit");
 }
 
 
@@ -3038,11 +3050,20 @@ void UpdateMouseButtonsFromCapture()
 	}
 }
 
-int FindTouchIndex(DWORD id)
+bool IsTouchGeneratedMouseMessage()
 {
-	for (int i = 0; i < 2; ++i) {
+	constexpr ULONG_PTR kMouseInputFromTouch = 0xFF515700u;
+	constexpr ULONG_PTR kMouseInputSourceMask = 0xFFFFFF00u;
+	const ULONG_PTR extra = static_cast<ULONG_PTR>(GetMessageExtraInfo());
+	return (extra & kMouseInputSourceMask) == kMouseInputFromTouch &&
+		   (extra & 0x80u) != 0;
+}
+
+int FindTouchIndex(UINT32 id)
+{
+	for (size_t i = 0; i < kMaxTrackedTouches; ++i) {
 		if (g_touches[i].active && g_touches[i].id == id) {
-			return i;
+			return static_cast<int>(i);
 		}
 	}
 	return -1;
@@ -3050,124 +3071,225 @@ int FindTouchIndex(DWORD id)
 
 int FindFreeTouchIndex()
 {
-	for (int i = 0; i < 2; ++i) {
+	for (size_t i = 0; i < kMaxTrackedTouches; ++i) {
 		if (!g_touches[i].active) {
-			return i;
+			return static_cast<int>(i);
 		}
 	}
 	return -1;
 }
 
-int ActiveTouchCount() {
-	return static_cast<int>(g_touches[0].active) + static_cast<int>(g_touches[1].active);
+int ActiveTouchCount()
+{
+	int count = 0;
+	for (const TouchPoint& touch : g_touches) {
+		count += touch.active ? 1 : 0;
+	}
+	return count;
 }
 
-void GetTouchPair(std::array<TouchPoint, 2>& out, int& count)
+int GetActiveTouchPair(std::array<TouchPoint, 2>& out)
 {
-	count = 0;
+	int count = 0;
 	for (const TouchPoint& touch : g_touches) {
 		if (touch.active && count < 2) {
 			out[static_cast<size_t>(count++)] = touch;
 		}
 	}
+	return count;
 }
 
-void HandleTouch(HWND hwnd, LPARAM lParam)
+bool FindTouchInSnapshot(const std::array<TouchPoint, kMaxTrackedTouches>& snapshot,
+	UINT32 id, TouchPoint& out)
 {
-	const UINT count = LOWORD(lParam);
-	std::vector<TOUCHINPUT> inputs(count);
-	HTOUCHINPUT touchHandle = reinterpret_cast<HTOUCHINPUT>(lParam);
-	if (!GetTouchInputInfo(touchHandle, count, inputs.data(), sizeof(TOUCHINPUT))) {
+	for (const TouchPoint& touch : snapshot) {
+		if (touch.active && touch.id == id) {
+			out = touch;
+			return true;
+		}
+	}
+	return false;
+}
+
+void ResetTouchState()
+{
+	std::fill(std::begin(g_touches), std::end(g_touches), TouchPoint{});
+}
+
+void UpdateTouchGestureFromSnapshots(
+	const std::array<TouchPoint, kMaxTrackedTouches>& oldTouches)
+{
+	int oldCount = 0;
+	for (const TouchPoint& touch : oldTouches) {
+		oldCount += touch.active ? 1 : 0;
+	}
+
+	std::array<TouchPoint, 2> currentPair{};
+	const int currentCount = GetActiveTouchPair(currentPair);
+
+	// A single active contact rotates exactly like the old left-mouse gesture.
+	// Once a second contact exists, rotation is disabled and the gesture becomes
+	// two-finger pan + pinch zoom.
+	if (currentCount == 1) {
+		TouchPoint previous{};
+		if (oldCount == 1 && FindTouchInSnapshot(oldTouches, currentPair[0].id, previous)) {
+			const float dx = currentPair[0].x - previous.x;
+			const float dy = currentPair[0].y - previous.y;
+			if (dx != 0.0f || dy != 0.0f) {
+				g_ang1 += dx * 0.002f;
+				g_ang2 += dy * 0.002f;
+				g_needsRedraw = true;
+			}
+		}
 		return;
 	}
 
-	std::array<TouchPoint, 2> oldTouches{};
-	int oldCount = 0;
-	GetTouchPair(oldTouches, oldCount);
+	if (currentCount < 2) {
+		return;
+	}
 
-	bool moved = false;
+	// Select the two contacts which existed in both snapshots. This makes
+	// adding/removing a third finger or replacing a lifted finger stable.
+	std::array<TouchPoint, 2> oldCommon{};
+	std::array<TouchPoint, 2> newCommon{};
+	int commonCount = 0;
 
-	for (const TOUCHINPUT& ti : inputs) {
-		POINT point{
-			static_cast<LONG>(ti.x / 100),
-			static_cast<LONG>(ti.y / 100)
-		};
-		ScreenToClient(hwnd, &point);
+	for (const TouchPoint& current : currentPair) {
+		TouchPoint previous{};
+		if (FindTouchInSnapshot(oldTouches, current.id, previous)) {
+			oldCommon[static_cast<size_t>(commonCount)] = previous;
+			newCommon[static_cast<size_t>(commonCount)] = current;
+			++commonCount;
+			if (commonCount == 2) {
+				break;
+			}
+		}
+	}
 
-		if (ti.dwFlags & TOUCHEVENTF_DOWN) {
-			int index = FindTouchIndex(ti.dwID);
+	if (commonCount != 2) {
+		// The second finger has just arrived, or the previous second finger
+		// has just disappeared. Rebase the gesture without producing a jump.
+		return;
+	}
+
+	const float oldCenterX = (oldCommon[0].x + oldCommon[1].x) * 0.5f;
+	const float oldCenterY = (oldCommon[0].y + oldCommon[1].y) * 0.5f;
+	const float newCenterX = (newCommon[0].x + newCommon[1].x) * 0.5f;
+	const float newCenterY = (newCommon[0].y + newCommon[1].y) * 0.5f;
+
+	const float deltaX = newCenterX - oldCenterX;
+	const float deltaY = newCenterY - oldCenterY;
+
+	if (deltaX != 0.0f || deltaY != 0.0f) {
+		const float cx = static_cast<float>(g_renderWidth);
+		const float cy = static_cast<float>(g_renderHeight);
+		const float l = g_len * 4.0f / std::max(1.0f, cx + cy);
+
+		g_cenx += l * (-deltaX * std::sin(g_ang1) -
+					   deltaY * std::sin(g_ang2) * std::cos(g_ang1));
+		g_ceny += l * deltaY * std::cos(g_ang2);
+		g_cenz += l * (deltaX * std::cos(g_ang1) -
+					   deltaY * std::sin(g_ang2) * std::sin(g_ang1));
+		g_needsRedraw = true;
+	}
+
+	const float oldDx = oldCommon[0].x - oldCommon[1].x;
+	const float oldDy = oldCommon[0].y - oldCommon[1].y;
+	const float newDx = newCommon[0].x - newCommon[1].x;
+	const float newDy = newCommon[0].y - newCommon[1].y;
+	const float oldDist = std::sqrt(oldDx * oldDx + oldDy * oldDy);
+	const float newDist = std::sqrt(newDx * newDx + newDy * newDy);
+
+	if (oldDist > 1.0f && newDist > 1.0f) {
+		const float scale = oldDist / newDist;
+		if (std::isfinite(scale) && scale > 0.0f) {
+			g_len *= scale;
+			g_len = std::clamp(g_len, 0.01f, 1000.0f);
+			if (std::abs(scale - 1.0f) > 1e-6f) {
+				g_needsRedraw = true;
+			}
+		}
+	}
+}
+
+void HandlePointerTouch(HWND hwnd, UINT message, WPARAM wParam)
+{
+	if (message == WM_POINTERENTER || message == WM_POINTERLEAVE) {
+		return;
+	}
+
+	const UINT32 pointerId = GET_POINTERID_WPARAM(wParam);
+	POINTER_INPUT_TYPE pointerType{};
+	if (!GetPointerType(pointerId, &pointerType) || pointerType != PT_TOUCH) {
+		return;
+	}
+
+	UINT32 contactCount = 0;
+	if (!GetPointerFrameTouchInfo(pointerId, &contactCount, nullptr) || contactCount == 0) {
+		return;
+	}
+
+	std::vector<POINTER_TOUCH_INFO> contacts(contactCount);
+	if (!GetPointerFrameTouchInfo(pointerId, &contactCount, contacts.data())) {
+		return;
+	}
+
+	std::array<TouchPoint, kMaxTrackedTouches> oldTouches{};
+	for (size_t i = 0; i < kMaxTrackedTouches; ++i) {
+		oldTouches[i] = g_touches[i];
+	}
+
+	for (const POINTER_TOUCH_INFO& contact : contacts) {
+		const POINTER_INFO& info = contact.pointerInfo;
+		const UINT32 id = info.pointerId;
+
+		if ((info.pointerFlags & POINTER_FLAG_CANCELED) != 0) {
+			const int index = FindTouchIndex(id);
+			if (index >= 0) {
+				g_touches[index] = {};
+			}
+			continue;
+		}
+
+		POINT clientPoint = info.ptPixelLocationRaw;
+		if (!ScreenToClient(hwnd, &clientPoint)) {
+			continue;
+		}
+
+		if ((info.pointerFlags & POINTER_FLAG_DOWN) != 0) {
+			int index = FindTouchIndex(id);
 			if (index < 0) {
 				index = FindFreeTouchIndex();
 			}
 			if (index >= 0) {
 				g_touches[index].active = true;
-				g_touches[index].id = ti.dwID;
-				g_touches[index].x = static_cast<float>(point.x);
-				g_touches[index].y = static_cast<float>(point.y);
+				g_touches[index].id = id;
+				g_touches[index].x = static_cast<float>(clientPoint.x);
+				g_touches[index].y = static_cast<float>(clientPoint.y);
 			}
+			continue;
 		}
 
-		if (ti.dwFlags & TOUCHEVENTF_MOVE) {
-			const int index = FindTouchIndex(ti.dwID);
+		if ((info.pointerFlags & POINTER_FLAG_UPDATE) != 0) {
+			const int index = FindTouchIndex(id);
 			if (index >= 0) {
-				if (std::fabs(g_touches[index].x - point.x) > 0.001f ||
-					std::fabs(g_touches[index].y - point.y) > 0.001f) {
-					moved = true;
-				}
-				g_touches[index].x = static_cast<float>(point.x);
-				g_touches[index].y = static_cast<float>(point.y);
+				g_touches[index].x = static_cast<float>(clientPoint.x);
+				g_touches[index].y = static_cast<float>(clientPoint.y);
 			}
 		}
 	}
 
-	const int newCountBeforeUp = ActiveTouchCount();
-	std::array<TouchPoint, 2> newTouches{};
-	int newCount = 0;
-	GetTouchPair(newTouches, newCount);
+	UpdateTouchGestureFromSnapshots(oldTouches);
 
-	if (oldCount == 1 && newCount == 1 && moved) {
-		const float dx = newTouches[0].x - oldTouches[0].x;
-		const float dy = newTouches[0].y - oldTouches[0].y;
-		g_ang1 += dx * 0.002f;
-		g_ang2 += dy * 0.002f;
-	} else if (oldCount == 2 && newCount == 2 && moved) {
-		const float oldSumX = oldTouches[0].x + oldTouches[1].x;
-		const float oldSumY = oldTouches[0].y + oldTouches[1].y;
-		const float newSumX = newTouches[0].x + newTouches[1].x;
-		const float newSumY = newTouches[0].y + newTouches[1].y;
-		const float deltaX = newSumX - oldSumX;
-		const float deltaY = newSumY - oldSumY;
-
-		const float cx = static_cast<float>(g_renderWidth);
-		const float cy = static_cast<float>(g_renderHeight);
-		const float l = g_len * 2.0f / std::max(1.0f, cx + cy);
-
-		g_cenx += l * (-deltaX * std::sin(g_ang1) - deltaY * std::sin(g_ang2) * std::cos(g_ang1));
-		g_ceny += l * ( deltaY * std::cos(g_ang2));
-		g_cenz += l * ( deltaX * std::cos(g_ang1) - deltaY * std::sin(g_ang2) * std::sin(g_ang1));
-
-		const float oldDist = std::sqrt(
-			(oldTouches[0].x - oldTouches[1].x) * (oldTouches[0].x - oldTouches[1].x) +
-			(oldTouches[0].y - oldTouches[1].y) * (oldTouches[0].y - oldTouches[1].y) + 1.0f);
-		const float newDist = std::sqrt(
-			(newTouches[0].x - newTouches[1].x) * (newTouches[0].x - newTouches[1].x) +
-			(newTouches[0].y - newTouches[1].y) * (newTouches[0].y - newTouches[1].y) + 1.0f);
-		if (newDist > 0.001f) {
-			g_len *= oldDist / newDist;
-		}
-	}
-
-	for (const TOUCHINPUT& ti : inputs) {
-		if (ti.dwFlags & TOUCHEVENTF_UP) {
-			const int index = FindTouchIndex(ti.dwID);
+	for (const POINTER_TOUCH_INFO& contact : contacts) {
+		if ((contact.pointerInfo.pointerFlags & POINTER_FLAG_UP) != 0 ||
+			(contact.pointerInfo.pointerFlags & POINTER_FLAG_CANCELED) != 0) {
+			const int index = FindTouchIndex(contact.pointerInfo.pointerId);
 			if (index >= 0) {
 				g_touches[index] = {};
 			}
 		}
 	}
-
-	(void)newCountBeforeUp;
-	CloseTouchInputHandle(touchHandle);
 }
 
 LRESULT CALLBACK VerySimpleLicenseViewerProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -3181,6 +3303,43 @@ LRESULT CALLBACK VerySimpleLicenseViewerProc(HWND hwnd, UINT message, WPARAM wPa
 	return 0;
 }
 
+INT_PTR CALLBACK ExitWindowsAfterDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+	switch (message) {
+	case WM_INITDIALOG:
+		if (lParam) SetWindowTextW(hDlg, (LPWSTR)(ULONG_PTR)lParam);
+		SetDlgItemTextW(hDlg, IDC_EDIT_INPUT_EXIT_WINDOWS_TIME, L"1");
+		return 1;
+	case WM_COMMAND:
+		switch (wParam) {
+		case IDCANCEL:
+			EndDialog(hDlg, -1);
+			break;
+		case IDOK:
+		{
+			WCHAR text[64]{};
+			GetDlgItemTextW(hDlg, IDC_EDIT_INPUT_EXIT_WINDOWS_TIME, text, 64);
+			try {
+				INT_PTR i = (INT_PTR)std::stoull(text);
+				if (i < 0 || i > MAX_SHUTDOWN_TIMEOUT) {
+					throw std::exception("You inputed unacceptable value.");
+				}
+				EndDialog(hDlg, i);
+			}
+			catch (std::exception& e) {
+				MessageBoxA(hDlg, e.what(), NULL, MB_ICONERROR);
+			}
+		}
+			break;
+		default:
+			return 0;
+		}
+		return 1;
+	default:
+		return 0;
+	}
+	return 0;
+}
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	if (g_taskbarCreatedMessage && message == g_taskbarCreatedMessage) {
@@ -3190,7 +3349,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 
 	switch (message) {
 	case WM_CREATE:
-		RegisterTouchWindow(hwnd, 0);
+		ResetTouchState();
 		SetLayeredWindowAttributes(hwnd, 0, g_alpha, LWA_ALPHA);
 		return 0;
 
@@ -3261,6 +3420,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 			}
 			return 0;
 		}
+		if (command == IDM_PAUSE_CONTINUE) {
+			SetPaused(!g_paused);
+			return 0;
+		}
 		if (command == IDM_HIDE_TO_TASKBAR) {
 			HideToTaskbar();
 			return 0;
@@ -3292,7 +3455,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 				L"Press right button to move the view.\r\n"
 				L"Scroll the wheel to zoom.\r\n"
 				L"Press Up to decrease opacity, or Down to increase it.\r\n"
-				L"Use the system menu to edit the Kernel, open Settings, view statistics, or hide the window.\r\n"
+				L"Use the system menu to pause/resume, edit the Kernel, open Settings, view statistics, or hide the window.\r\n"
 				L"The notification-area icon can restore the window or exit the application.\r\n"
 				L"\r\nThanks for using this application!"
 				L"\r\nOriginal webpage: " + std::wstring(g_kOriginalUrl) +
@@ -3304,9 +3467,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 #endif
 			).c_str();
 			const TASKDIALOG_BUTTON buttons[] = {
-				{0x1001, L"Open repository"},
-				{0x1002, L"Open original webpage"},
-				{0x1003, L"Show license"},
+				{0x1001, L"Open &Repository"},
+				{0x1002, L"&Open original webpage"},
+				{0x1003, L"Show &License"},
 			};
 			cfg.cbSize = sizeof(TASKDIALOGCONFIG);
 			cfg.pszWindowTitle = L"Help - vsbm for Windows";
@@ -3361,6 +3524,125 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 			}
 			return 0;
 		}
+		if (command == IDM_EXIT_WINDOWS || command == IDM_EXIT_WINDOWS_AFTER) {
+			TASKDIALOGCONFIG cfg{};
+			const TASKDIALOG_BUTTON buttons[] = {
+				{0x101, L"&Logoff"},
+				{0x102, L"&Shutdown"},
+				{0x103, L"&Restart"},
+				{0x104, L"&Abort scheduled shutdown"},
+			};
+			cfg.cbSize = sizeof(TASKDIALOGCONFIG);
+			cfg.pszWindowTitle = L"Exit Windows";
+			cfg.pszMainInstruction = L"How do you want to exit windows?";
+			cfg.pszContent = L"Please choose the option that you want.";
+			cfg.pszMainIcon = TD_INFORMATION_ICON;
+			cfg.cButtons = 3;
+			cfg.pButtons = buttons;
+			cfg.nDefaultButton = 2;
+			cfg.dwCommonButtons = TDCBF_CANCEL_BUTTON;
+			cfg.hwndParent = hwnd;
+			if (command == IDM_EXIT_WINDOWS_AFTER) {
+				cfg.pszWindowTitle = L"Exit Windows After Specified Time";
+				cfg.pszContent = L"Please choose one of the following option, and then choose a desired time.";
+				cfg.pButtons += 1;
+				cfg.cButtons -= 1;
+				cfg.cButtons += 1;
+			}
+			int user = 0;
+			HRESULT hr = TaskDialogIndirect(&cfg, &user, nullptr, nullptr);
+			if (!SUCCEEDED(hr)) user = 1;
+			if (user < 0x101 || user > 0x104) return 0;
+			if (user != 0x101) do { // Logoff does not need shutdown privilege
+				HANDLE hToken;
+				TOKEN_PRIVILEGES tkp{};
+				if (OpenProcessToken(GetCurrentProcess(),
+					TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
+					LookupPrivilegeValue(NULL, SE_SHUTDOWN_NAME,
+						&tkp.Privileges[0].Luid);
+					tkp.PrivilegeCount = 1;  // one privilege to set    
+					tkp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+					SetLastError(0);
+					if (AdjustTokenPrivileges(hToken, FALSE, &tkp, 0, NULL, 0) && GetLastError() == 0) {
+						CloseHandle(hToken);
+						break;
+					}
+					CloseHandle(hToken);
+				}
+				MessageBoxW(hwnd, L"Cannot exit windows. You may not have the required privilege to exit windows.",
+					NULL, MB_ICONERROR);
+				return 0;
+			} while (0);
+			if (user == 0x104) {
+				bool ok = false;
+				HMODULE advapi32 = LoadLibraryW(L"advapi32.dll");
+				if (advapi32) {
+					using t = BOOL(WINAPI*)(LPWSTR);
+					t f = (t)GetProcAddress(advapi32, "AbortSystemShutdownW");
+					if (f) {
+						ok = f(NULL);
+					}
+					FreeLibrary(advapi32);
+				}
+				if (ok) {
+					MessageBoxW(hwnd, L"Successfully cancelled scheduled shutdown.", L"Success", MB_ICONINFORMATION);
+				} else {
+					MessageBoxW(hwnd, L"Cannot cancel scheduled shutdown!", NULL, MB_ICONERROR);
+				}
+				return 0;
+			}
+			DWORD time = 1;
+			if (command == IDM_EXIT_WINDOWS_AFTER) {
+				auto r = DialogBoxParamW(NULL, MAKEINTRESOURCEW(IDD_DIALOG_INPUT_EXIT_WINDOWS_TIME),
+					hwnd, ExitWindowsAfterDialogProc, (LPARAM)ULONG_PTR(user == 0x102 ? L"Shutdown" : L"Restart"));
+				if (r == (INT_PTR)-1) return 0;
+				time = (DWORD)r;
+			}
+			DWORD reason = SHTDN_REASON_MAJOR_APPLICATION | SHTDN_REASON_MINOR_MAINTENANCE | SHTDN_REASON_FLAG_PLANNED;
+			bool ok = false;
+			if (user == 0x101) {
+				HMODULE user32 = LoadLibraryW(L"user32.dll");
+				if (user32) {
+					using t = BOOL(WINAPI*)(UINT, DWORD);
+					t f = (t)GetProcAddress(user32, "ExitWindowsEx");
+					if (f) {
+						ok = f(EWX_LOGOFF | EWX_RESTARTAPPS | EWX_FORCE, reason);
+					}
+					FreeLibrary(user32);
+				}
+			}
+			else {
+				HMODULE advapi32 = LoadLibraryW(L"advapi32.dll");
+				if (advapi32) {
+					using t = DWORD(WINAPI*)(LPWSTR, LPWSTR, DWORD, DWORD, DWORD);
+					t f = (t)GetProcAddress(advapi32, "InitiateShutdownW");
+					if (f) {
+						DWORD flags = (user == 0x102) ? SHUTDOWN_POWEROFF : SHUTDOWN_RESTART;
+						ok = f(NULL, NULL, time, SHUTDOWN_FORCE_OTHERS | SHUTDOWN_FORCE_SELF | SHUTDOWN_RESTARTAPPS |
+							flags, reason) == ERROR_SUCCESS;
+					}
+					FreeLibrary(advapi32);
+				}
+			}
+			if (!ok) {
+				MessageBoxW(hwnd, L"Cannot exit windows!", NULL, MB_ICONERROR);
+				return 0;
+			}
+			if (command == IDM_EXIT_WINDOWS) {
+				SetPaused(true);
+				EnableWindow(hwnd, false);
+				std::thread([] { Sleep(5000); ExitProcess(ERROR_SHUTDOWN_IN_PROGRESS); }).detach();
+				SetWindowTextW(hwnd, L"Exiting Windows, please wait...");
+			}
+			if (command == IDM_EXIT_WINDOWS_AFTER) {
+				MessageBoxW(hwnd, L"Success", L"Success", MB_ICONINFORMATION);
+			}
+			return 0;
+		}
+		if (command == IDM_EXIT_APP) {
+			PostMessageW(hwnd, WM_CLOSE, 0, 0);
+			return 0;
+		}
 		break;
 	}
 
@@ -3383,6 +3665,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		break;
 
 	case WM_LBUTTONDOWN:
+		if (IsTouchGeneratedMouseMessage()) return 0;
 		if (g_benchmarkMode) return 0;
 		g_leftDown = true;
 		g_mouseMoved = false;
@@ -3392,11 +3675,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		return 0;
 
 	case WM_LBUTTONUP:
+		if (IsTouchGeneratedMouseMessage()) return 0;
 		g_leftDown = false;
 		UpdateMouseButtonsFromCapture();
 		return 0;
 
 	case WM_RBUTTONDOWN:
+		if (IsTouchGeneratedMouseMessage()) return 0;
 		if (g_benchmarkMode) return 0;
 		g_rightDown = true;
 		g_mouseMoved = false;
@@ -3406,11 +3691,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		return 0;
 
 	case WM_RBUTTONUP:
+		if (IsTouchGeneratedMouseMessage()) return 0;
 		g_rightDown = false;
 		UpdateMouseButtonsFromCapture();
 		return 0;
 
 	case WM_MOUSEMOVE: {
+		if (IsTouchGeneratedMouseMessage()) return 0;
 		if (g_benchmarkMode) return 0;
 		const int x = GET_X_LPARAM(lParam);
 		const int y = GET_Y_LPARAM(lParam);
@@ -3446,6 +3733,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 	}
 
 	case WM_MOUSEWHEEL: {
+		if (IsTouchGeneratedMouseMessage()) return 0;
 		if (g_benchmarkMode) return 0;
 		const short delta = GET_WHEEL_DELTA_WPARAM(wParam);
 		g_len *= std::exp(-0.001f * static_cast<float>(delta));
@@ -3454,9 +3742,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		return 0;
 	}
 
-	case WM_TOUCH:
+	case WM_CANCELMODE:
+	case WM_CAPTURECHANGED:
+		// Do not clear touch contacts here. A primary touch may participate in
+		// legacy mouse activation/capture processing; clearing the pointer table
+		// here would make the second finger disappear from the gesture.
+		if (ActiveTouchCount() != 0) return 0;
+		break;
+
+	case WM_POINTERDOWN:
+	case WM_POINTERUPDATE:
+	case WM_POINTERUP:
 		if (g_benchmarkMode) return 0;
-		HandleTouch(hwnd, lParam);
+		HandlePointerTouch(hwnd, message, wParam);
 		g_needsRedraw = true;
 		return 0;
 
@@ -3537,7 +3835,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		break;
 
 	case WM_DESTROY:
-		UnregisterTouchWindow(hwnd);
+		ResetTouchState();
 		RemoveTrayIcon();
 		SaveWindowSettings();
 		if (g_kernelDialog) {
@@ -3784,6 +4082,7 @@ int WINAPI wWinMain(
 
 	Render();
 	AddTrayIcon();
+	RegisterApplicationRestart(lpCmdLine, RESTART_NO_HANG);
 
 	const bool openSettingsOnStartup = !g_benchmarkMode &&
 		((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0);

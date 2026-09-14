@@ -26,8 +26,8 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_DEFAULT
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,1,0,0
- PRODUCTVERSION 2,1,0,0
+ FILEVERSION 2,2,0,0
+ PRODUCTVERSION 2,2,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -44,12 +44,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "vsbm"
             VALUE "FileDescription", "vsbm"
-            VALUE "FileVersion", "2.1.0.0"
+            VALUE "FileVersion", "2.2.0.0"
             VALUE "InternalName", "vsbm-windows.exe"
             VALUE "LegalCopyright", "Copyright (C) 2026"
             VALUE "OriginalFilename", "vsbm-windows.exe"
             VALUE "ProductName", "Volume Shader Benchmark"
-            VALUE "ProductVersion", "2.1.0.0"
+            VALUE "ProductVersion", "2.2.0.0"
         END
     END
     BLOCK "VarFileInfo"
@@ -111,6 +111,63 @@ IDR_BIN_PIXELSHADER1    BIN                     "shaders\\PixelShader1.bin"
 IDR_BIN_PIXELSHADER2    BIN                     "shaders\\PixelShader2.bin"
 
 #endif    // 非特定语言(默认值) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// 英语(美国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DIALOG_INPUT_EXIT_WINDOWS_TIME DIALOGEX 0, 0, 148, 64
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_TOPMOST | WS_EX_CONTROLPARENT
+CAPTION "Input time"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Exit windows after the following seconds",IDC_STATIC,7,7,134,8
+    EDITTEXT        IDC_EDIT_INPUT_EXIT_WINDOWS_TIME,7,20,134,14,ES_AUTOHSCROLL | ES_NUMBER
+    DEFPUSHBUTTON   "&Yes",IDOK,35,43,50,14
+    PUSHBUTTON      "&Cancel",IDCANCEL,91,43,50,14
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_DIALOG_INPUT_EXIT_WINDOWS_TIME, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 141
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 57
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_DIALOG_INPUT_EXIT_WINDOWS_TIME AFX_DIALOG_LAYOUT
+BEGIN
+    0
+END
+
+#endif    // 英语(美国) resources
 /////////////////////////////////////////////////////////////////////////////
 
 

@@ -24,6 +24,7 @@
     <ProjectGuid>{b1a1eb71-63ec-45ea-8349-6b9a32fdf2be}</ProjectGuid>
     <RootNamespace>vsbmwindows</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>vsbm-windows</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

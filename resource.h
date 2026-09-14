@@ -8,14 +8,16 @@
 #define IDR_BIN_VERTEXSHADER            105
 #define IDR_BIN_PIXELSHADER1            106
 #define IDR_BIN_PIXELSHADER2            107
+#define IDD_DIALOG_INPUT_EXIT_WINDOWS_TIME 108
+#define IDC_EDIT_INPUT_EXIT_WINDOWS_TIME 1001
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        108
+#define _APS_NEXT_RESOURCE_VALUE        110
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1001
+#define _APS_NEXT_CONTROL_VALUE         1002
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
