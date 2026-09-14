@@ -2792,9 +2792,13 @@ void OpenRenderPreview()
 		return;
 	}
 
+#if 0
 	int u = MessageBoxW(g_hwnd, L"Render preview has been removed because the high entropy PNG is always recognized"
 		L" as malicious payload.\nIf you want to preview the render effect, you can open the online resource.\n"
 		L"Do you want to open the online preview?", NULL, MB_ICONERROR | MB_OKCANCEL);
+#else
+	int u = IDCANCEL;
+#endif
 	if (u == IDCANCEL) return;
 	else if (u == IDOK) {
 		OpenUrl(g_kOnlinePreviewUrl, g_hwnd);
@@ -2881,7 +2885,7 @@ void AddKernelMenuItem(HWND hwnd)
 	AppendMenuW(systemMenu, MF_STRING, IDM_HIDE_TO_TASKBAR, L"Hide to taskbar");
 	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_HIDE_WHILE_WORKING, L"Hide while working");
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
-	AppendMenuW(systemMenu, MF_STRING, IDM_RENDER_PREVIEW, L"&Render preview");
+	//AppendMenuW(systemMenu, MF_STRING, IDM_RENDER_PREVIEW, L"&Render preview");
 	AppendMenuW(systemMenu, MF_STRING, IDM_STATISTICS, L"Statistics");
 	AppendMenuW(systemMenu, MF_SEPARATOR, 0, nullptr);
 	AppendMenuW(systemMenu, g_benchmarkMode ? MF_GRAYED : MF_STRING, IDM_SETTINGS, L"&Settings...");
@@ -3227,6 +3231,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 		}
 		if (command == IDM_HELP) {
 			TASKDIALOGCONFIG cfg{};
+			AppVersion ver = GetSelfVersion();
 			std::wstring content = (
 				L"Press Space to pause/resume animation.\r\n"
 				L"Press left button and move to rotate.\r\n"
@@ -3237,7 +3242,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 				L"The notification-area icon can restore the window or exit the application.\r\n"
 				L"\r\nThanks for using this application!"
 				L"\r\nOriginal webpage: " + std::wstring(g_kOriginalUrl) +
-				L"\r\nWindows version by: " + std::wstring(g_kProductUrl) + 
+				L"\r\nWindows version " + std::format(L"{}.{}.{}.{}", ver.major, ver.minor, ver.build, ver.revision) +
+				L" by: " + std::wstring(g_kProductUrl) +
 				L" , GPL-3.0 License."
 #ifndef _WIN64
 				+ L"\r\nYou're currently using the 32 bit version of the application."
